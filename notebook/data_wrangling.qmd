@@ -1,0 +1,365 @@
+---
+title: "Data Wrangling"
+author:
+  - name: "Astarte Brown"
+  - name: "Joffrey Joumaa"
+date: "`r invisible(Sys.setlocale(locale = 'C')); format(Sys.Date(), format = '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-location: left
+    number-sections: true
+    smooth-scroll: true
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    fig-align: "center"
+    highlight-style: arrow
+execute: 
+  echo: true
+  cache: true
+  warning: false
+theme:
+  light: flatly
+  dark: darkly
+knitr:
+  opts_chunk:
+    message: false
+    rownames.print: false
+    tidy: styler
+---
+
+# Import library
+
+```{r}
+# data manipulation
+library(tidyr)
+library(dplyr)
+library(readr)
+library(data.table)
+library(magrittr)
+library(purrr)
+
+# fast k nearest algo
+library(nabor)
+
+# data location wrangling
+library(geosphere)
+
+# data viz
+library(ggOceanMaps)
+library(scales)
+
+# time date manipulation
+library(lubridate)
+library(lutz)
+```
+
+# Set up useful functions
+
+## `matlab2Pos`
+
+A function to convert julian date exported from `Matlab` to PosiX in `R`.
+
+```{r}
+matlab2POS = function(x, timez = "UTC") {
+  days = x - 719529 	# 719529 = days from 1-1-0000 to 1-1-1970
+  secs = days * 86400 # 86400 seconds in a day
+  # This next string of functions is a complete disaster, but it works.
+  # It tries to outsmart R by converting the secs value to a POSIXct value
+  # in the UTC time zone, then converts that to a time/date string that 
+  # should lose the time zone, and then it performs a second as.POSIXct()
+  # conversion on the time/date string to get a POSIXct value in the user's 
+  # specified timezone. Time zones are a goddamned nightmare.
+  return(as.POSIXct(strftime(as.POSIXct(secs, origin = '1970-1-1', 
+                                        tz = 'UTC'), format = '%Y-%m-%d %H:%M', 
+                             tz = 'UTC', usetz = FALSE), tz = timez))
+}
+```
+
+The function is a copy-paste from <https://lukemiller.org/index.php/2011/02/converting-matlab-and-r-date-and-time-values/>.
+
+# Data Import
+
+## Dive Data
+
+This data is imported from the file `NESE_ALL_DiveStatType_TV3_Astarte.txt` which is an extraction provided by Roxanne.
+
+```{r}
+# import the data
+data_dive = read.csv(
+  "../data/NESE_ALL_DiveStatType_TV3_Astarte.txt",
+  header = TRUE
+)
+
+# convert date
+data_dive <- data_dive %>% 
+  # convert 
+  mutate(date = matlab2POS(JulDate)) %>% 
+  rename(id = Var1) %>% 
+  select(-c("Year",
+            "Month",
+            "Day", 
+            "Hour",
+            "Min",
+            "Sec",
+            "JulDate"))
+```
+
+## GPS Data
+
+This data is imported from the file `NESE_ALL_TLL_TV3_Astarte.txt` available here: <https://drive.google.com/drive/folders/1U5-z9ZBasNxcL1UAOeMSEZogY30aUaps>
+
+```{r}
+# loading location data
+data_loc <-
+  read.csv("../data/NESE_ALL_TLL_TV3_Astarte.txt")
+
+# let's convert the date into a proper format
+data_loc <- data_loc %>% 
+  mutate(date = matlab2POS(JulDate)) %>% 
+  rename(id = Var1) 
+```
+
+## Bathymetric Data
+
+This data was generated using the [`marmap`](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0073051) package.
+
+```{r}
+# import dataset with bathymetric
+data_bathy = readRDS("../data/bathy_north_pacific.rds")
+```
+
+## Departure and Arrival Data
+
+This data is imported from the file `AstarteDataPull2022_04_17.csv` which is an extraction provided by Roxanne.
+
+```{r}
+# import roxanne's file rearding departure and arrival location
+data_loc_dep_arr = read_csv("../data/AstarteDataPull2022_04_17.csv")
+```
+
+# Data Wrangling
+
+## Merge `Dive` and `GPS` dataset
+
+Since the merge is not a "perfect" merge (*i.e.* it is unlikely a data dive time matches perfectly a data location time), we're using a rolling join on the `date` (*i.e* for each data dive time, we match the closest data location time).
+
+::: callout-note
+Please note here that datasets are converted in `data.table` object to join both dataset using a rolling join. To our knowledge that is currently not available using `dplyr`
+:::
+
+```{r}
+# convert a data.frame into a data.table
+data_loc_dt = as.data.table(data_loc)
+data_dive_dt = as.data.table(data_dive)
+
+# rolling join of data_loc_dt with data_dive_dt using data.table
+data_dive_dt = data_loc_dt[, .(date, id, Lat, Long)] %>%
+  .[data_dive_dt,
+    roll = "nearest",
+    on = c("id", "date")]
+```
+
+::: callout-warning
+```{r fig-trip}
+#| fig-cap: "Trip at sea of seals having longitude coordinates below -180"
+
+# identification of the individual with longitude below -180
+id_issue = data_dive_dt %>% 
+  as_tibble(.) %>% 
+  mutate(is_lon = Long < -180) %>% 
+  group_by(id) %>% 
+  summarise(is_lon = any(is_lon)) %>% 
+  filter(is_lon == TRUE) %>% 
+  pull(id)
+
+# plot their trip
+data_dive_dt %>% 
+  as_tibble(.) %>% 
+  filter(id == id_issue) %>% 
+  ggplot(., aes(x = Long, y = Lat, col = as.factor(id))) +
+  geom_point(show.legend = F) +
+  facet_grid(.~id)
+```
+
+```{r}
+#| echo: false
+
+# for the text below
+nb_id_issue = length(id_issue)
+```
+
+There are `r nb_id_issue` seals for which `Longitude` data goes below `-180` (@fig-trip). Looking at their trip, it seems that this data can be corrected by adding 360.
+
+```{r}
+# replace wrong longitude 
+# weird 'mutate(Long = replace(Long, Long < -180 & !is.na(Long), Long + 360))'
+# provides weird results... so back to basics
+data_dive_dt[Long < -180 & !is.na(Long), Long := Long + 360]
+```
+:::
+
+::: callout-note
+```{r}
+#| echo: FALSE
+
+# proportion of seal w/o location data
+percent_seal_location = data_dive_dt[, .(is_location_data = !all(!is.na(Lat))), by = id] %>%
+    .[, paste(round(prop.table(table(is_location_data)) * 100, 2), "%")] %>% .[1]
+percent_seal_no_location = data_dive_dt[, .(is_location_data = !all(!is.na(Lat))), by = id] %>%
+    .[, paste(round(prop.table(table(is_location_data)) * 100, 2), "%")] %>% .[2]
+
+# nb of seal w/o location data
+nb_seal_location = data_dive_dt[, .(is_location_data = !all(!is.na(Lat))), by = id] %>%
+    .[, as.character(table(is_location_data))] %>% .[1]
+nb_seal_no_location = data_dive_dt[, .(is_location_data = !all(!is.na(Lat))), by = id] %>%
+    .[, as.character(table(is_location_data))] %>% .[2]
+```
+
+There are `r nb_seal_location` seals with location data and `r nb_seal_no_location` without any location data, that respectively represents `r percent_seal_location` and `r percent_seal_no_location`.
+:::
+
+## Add Bathymetric Data
+
+To merge the bathymetric data, we're going to once again use a rolling join with the closest location (instead of the closest time). `data.table` does not offer the possibility to do a rolling join using two columns to determine the closest pairs ((lat_dt1; lon_dt1) and (lat_2; lon_dt2)). For that reason, for each row of `data_dive_dt`, we're going to find the closest location in `data_bathy` using the `knn` function in `nabor` package.
+
+```{r}
+#| eval: false
+
+# convert as a data.table
+setDT(data_bathy)
+
+# merge with the closest location, i.e. c(Lat, Long)
+data_dive_dt = data_dive_dt[,
+                            {
+                              # number of row from oceanographic data to join
+                              k <- 1
+                              # k-nearest neighbor
+                              kn <- nabor::knn(data_bathy[, .(Long = x, Lat = y)],
+                                               matrix(c(Long, Lat), ncol = 2),
+                                               k)
+                              # keep all columns from x
+                              c(.SD[rep(seq.int(.N), k)],
+                                # add columns found in data_cop
+                                data_bathy[as.vector(kn$nn.idx),
+                                           .(bathy = z)])
+                            }]
+```
+
+## Add Departure and Arrival information
+
+```{r}
+#| eval: false
+
+# merge to add DepartureLocation and ArrivalLocation columns to data_dive_dt dataset
+data_dive_dt <- data_loc_dep_arr %>% 
+  select(id = TOPPID, DepartureLocation, ArrivalLocation) %>% 
+  merge(x = data_dive_dt, y = ., by = "id", all.x = T)
+```
+
+## Add a Distance Measurement
+
+### First version
+
+To ease calculation, let's consider the coast as the first data location, and calculate the distance from this point to all other points.
+
+```{r}
+#| eval: false
+
+# 1. let's create a lon_dep and lat_dep column that will repeat the first 
+# data location available for each seals
+data_dive_dt <- data_dive_dt %>%
+  # order by ID and date
+  arrange(id, date) %>% 
+  # group by id
+  group_by(id) %>% 
+  # create lat_dep and long_dep columns
+  mutate(lat_dep = first(Lat),
+         long_dep = first(Long)) %>% 
+  ungroup()
+
+# 2. calculate the distance
+res_inter <- distGeo(
+  as.matrix(data_dive_dt %>% select(long_dep, lat_dep)),
+  as.matrix(data_dive_dt %>% select(Long, Lat))
+)
+
+# 3. add a new column
+data_dive_dt <- data_dive_dt %>% 
+  mutate(dist_dep = res_inter) %>% 
+  # 4. remove temporary column
+  select(-c("long_dep", "lat_dep"))
+```
+
+### Second version
+
+Super easy, but very computational... (about one day)
+
+```{r}
+#| eval: false
+
+# get distance from the coast
+dist_coast_data <-
+  dist2land(data_dive_dt[!is.na(Long), .(lon = Long, lat = Lat)])
+
+# add the column dist_coast
+data_dive_dt[!is.na(Long), dist_coast := dist_coast_data$ldist]
+```
+
+## Add local `datetime`
+
+For that we:
+
+1. Determine for each dive the associated time zone using data location
+2. Calculate the local time based on the time zone
+
+```{r}
+#| eval: false
+
+# data_1
+data_dive_wo_location = data_dive_dt %>%
+  # keep the data without location
+  filter(is.na(Lat))
+
+# data_2
+data_dive_w_location =
+  data_dive_dt %>%
+  # get rid of data without location information
+  filter(!is.na(Lat)) %>%
+  # # find the time zone
+  mutate(
+    timezone = tz_lookup_coords(lat = Lat,
+                                lon = Long,
+                                method = "accurate"),
+    # transform date using the right time zone
+    date_tz = map2(
+      .x = date,
+      .y = timezone,
+      .f = function(x, y) {
+        with_tz(time = x, tzone = y)
+      }
+    )
+  ) %>%
+  # required because of the map2
+  unnest(date_tz) %>%
+  # remove timezone
+  select(-timezone)
+
+# combine and sort both
+data_dive = bind_rows(data_dive_w_location,
+                      data_dive_wo_location) %>%
+  arrange(id, DiveNumber)
+```
+
+# Save the processed data
+
+```{r}
+#| eval: false
+
+# save the data in a R-friendly format
+saveRDS(data_dive, "../export/data_dive.rds")
+
+# # here is another way to save those data in a csv format
+# write.csv(data_dive_dt, "../export/data_dive.csv")
+```
