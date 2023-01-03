@@ -55,6 +55,7 @@ library(ggmap)
 library(ggsn)
 library(sf)
 library(sp)
+library(smoothr)
 
 # kernel density
 library(eks)
@@ -80,10 +81,10 @@ windrose <-
            facet = F) {
     # this code comes from Roxanne
     uniqhours <- 1:24 * (360 / 24)
-
+    
     # trick to align hours om the graph
     data_to_plot <- rbind(data_to_plot[2:nrow(data_to_plot), ], data_to_plot[1, ])
-
+    
     for (i in 1:24) {
       # turn hours to radians
       if (i == 1) {
@@ -98,36 +99,36 @@ windrose <-
       }
     }
     data2 <- data.frame(direction = temp)
-
+    
     deg <- 15 # choose bin size (degrees/bin)
     dir.breaks <- seq(0 - (deg / 2), 360 + (deg / 2), deg) # define the range of each bin
-
+    
     # assign each direction to a bin range
     dir.binned <-
       cut(data2$direction,
-        breaks = dir.breaks,
-        ordered_result = TRUE
+          breaks = dir.breaks,
+          ordered_result = TRUE
       )
     # generate pretty lables
     dir.labels <- as.character(c(seq(0, 360 - deg, by = deg), 0))
-
+    
     # replace ranges with pretty bin lables
     levels(dir.binned) <- dir.labels
-
+    
     # Assign bin names to the original data set
     data2$dir.binned <- dir.binned
-
+    
     # add origin if any
     if (facet) {
       data2$origin <- unique(data_to_plot$origin)
     }
-
+    
     # set up max value
     maxvalue <- 35
-
+    
     # initialise the plot
     plt.dirrose_2 <- ggplot()
-
+    
     # check if grid
     if (!is.null(grid)) {
       plt.dirrose_2 <- plt.dirrose_2 +
@@ -166,13 +167,13 @@ windrose <-
       scale_fill_manual(values = c("white", "darkgrey"), name = "Time of day") +
       labs(x = "Time (hours)", y = "Count", title = set_title) +
       coord_polar(start = -(deg / 2) * (pi / 180))
-
+    
     # if facet
     if (facet) {
       plt.dirrose_2 <- plt.dirrose_2 +
         facet_wrap2(. ~ origin)
     }
-
+    
     # Wraps the histogram into a windrose
     plt.dirrose_2 <- plt.dirrose_2 +
       theme_bw() +
@@ -183,7 +184,7 @@ windrose <-
         panel.background = element_blank(),
         legend.key.size = unit(0.5, "cm")
       )
-
+    
     # return
     return(plt.dirrose_2)
   }
@@ -198,7 +199,6 @@ Let's load `data_dive`, *i.e.* the output of `data_wrangling.qmd`, and filter on
 data_dive <- readRDS("../export/data_dive.rds")
 
 # filter on seals departing from ANNU
-## Should we filter on individuals arriving to ANNU?
 data_dive <- data_dive %>%
   filter(DepartureLocation == "ANNU")
 ```
@@ -222,8 +222,8 @@ data_windrose <- data_dive %>%
   group_by(id) %>%
   # keep only the first, last date, but also all benthic dives
   filter(date == min(date) |
-    date == max(date) |
-    DiveTypeName == "Benthic")
+           date == max(date) |
+           DiveTypeName == "Benthic")
 ```
 
 ```{r fig-windrose-1}
@@ -277,7 +277,6 @@ windrose_benthic <- data_windrose %>%
 ### Next step
 
 * Circular stats :)
-
 :::
 
 ## Figure 2
@@ -289,9 +288,9 @@ This part is mostly based on [https://cran.r-project.org/web/packages/eks/vignet
 :::
 
 [^1]: 
-  * [https://gis.stackexchange.com/questions/64638/how-to-fill-in-the-parameters-for-kernel-density-estimation](https://gis.stackexchange.com/questions/64638/how-to-fill-in-the-parameters-for-kernel-density-estimation)
-  * [https://digitalcommons.usf.edu/cgi/viewcontent.cgi?article=1020&context=siv](https://digitalcommons.usf.edu/cgi/viewcontent.cgi?article=1020&context=siv)
-  * [https://gis.stackexchange.com/questions/50692/choosing-projection-for-rasterization-of-random-latitude-and-longitude-data-in-n/50791#50791](https://gis.stackexchange.com/questions/50692/choosing-projection-for-rasterization-of-random-latitude-and-longitude-data-in-n/50791#50791)
+* [https://gis.stackexchange.com/questions/64638/how-to-fill-in-the-parameters-for-kernel-density-estimation](https://gis.stackexchange.com/questions/64638/how-to-fill-in-the-parameters-for-kernel-density-estimation)
+* [https://digitalcommons.usf.edu/cgi/viewcontent.cgi?article=1020&context=siv](https://digitalcommons.usf.edu/cgi/viewcontent.cgi?article=1020&context=siv)
+* [https://gis.stackexchange.com/questions/50692/choosing-projection-for-rasterization-of-random-latitude-and-longitude-data-in-n/50791#50791](https://gis.stackexchange.com/questions/50692/choosing-projection-for-rasterization-of-random-latitude-and-longitude-data-in-n/50791#50791)
 
 ```{r}
 # data use to compute kernel density estimation
@@ -326,7 +325,7 @@ if (file.exists("../export/background_ggoceanmap.rds")) {
     lon = seq(-180, 180, 45),
     lat = seq(-90, 90, 10)
   )
-
+  
   # Plot
   trip = trip +
     geom_sf(data = graticule, color = "grey50")
@@ -355,14 +354,14 @@ df_kernel_dens_sf <- group_by(df_kernel_dens_sf, origin)
 
 # kernel density estimation
 df_kernel_dens_sf_kde <- st_kde(df_kernel_dens_sf,
-  H = diag(c(
-    MASS::bandwidth.nrd(
-      sf::st_coordinates(df_kernel_dens_sf)[, 1]
-    ),
-    MASS::bandwidth.nrd(
-      sf::st_coordinates(df_kernel_dens_sf)[, 2]
-    )
-  ) / 4)^2
+                                H = diag(c(
+                                  MASS::bandwidth.nrd(
+                                    sf::st_coordinates(df_kernel_dens_sf)[, 1]
+                                  ),
+                                  MASS::bandwidth.nrd(
+                                    sf::st_coordinates(df_kernel_dens_sf)[, 2]
+                                  )
+                                ) / 4)^2
 )
 
 # https://github.com/r-spatial/sf/issues/1762
@@ -395,13 +394,9 @@ trip +
 ```
 
 :::{.callout-caution}
-### Any other recommendations?
+### Next step
 
-* add North
-* scale
-* decrease size of the grid
-* make sure the kernel doesn't overlap with continent
-
+* see if it worth adding the North arrow and a scale
 :::
 
 
@@ -508,11 +503,15 @@ trip_bis +
 
 ```{r}
 # get predator distribution (extraction using google earth)
-Shark_area_coord <- read_sf("../export/shark_area.kml") %>%
+Shark_area_coord <- read_sf("../export/shark.kmz") %>%
+  smooth(., method = "ksmooth", smoothness = 0.5) %>% 
+  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
   st_coordinates() %>%
   as_tibble() %>%
   select(lon = X, lat = Y)
-Orca_area_coord <- read_sf("../export/orca_area.kml") %>%
+Orca_area_coord <- read_sf("../export/orca.kmz") %>%
+  smooth(., method = "ksmooth", smoothness = 0.5) %>%
+  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
   st_coordinates() %>%
   as_tibble() %>%
   select(lon = X, lat = Y)
@@ -535,9 +534,9 @@ data_dive <- data_dive %>%
       pol.y = Orca_area_coord$lat
     ),
     overlap_area = as.numeric(if_else(shark_area == 1 &
-      orca_area == 1, T, F)),
+                                        orca_area == 1, T, F)),
     full_area = as.numeric(if_else(shark_area == 0 &
-      orca_area == 0, F, T))
+                                     orca_area == 0, F, T))
   )
 ```
 
@@ -574,7 +573,10 @@ data_descriptive_area <- data_descriptive_ind %>%
     mean_perc_inside = wtd.mean(perc_inside, n_tot),
     mean_perc_outside = wtd.mean(perc_outside, n_tot),
     sd_perc_inside = sqrt(wtd.var(perc_inside, n_tot)),
-    sd_perc_outside = sqrt(wtd.var(perc_outside, n_tot))
+    sd_perc_outside = sqrt(wtd.var(perc_outside, n_tot)),
+    # based from here: https://stats.stackexchange.com/questions/25895/computing-standard-error-in-weighted-mean-estimation
+    se_perc_inside = sqrt(wtd.var(perc_inside, n_tot)*sum((n_tot/sum(n_tot))^2)),
+    se_perc_outside = sqrt(wtd.var(perc_outside, n_tot)*sum((n_tot/sum(n_tot))^2)),
   ) %>%
   pivot_longer(
     cols = ends_with("inside") |
@@ -588,12 +590,12 @@ data_descriptive_area <- data_descriptive_ind %>%
     values_from = "value"
   ) %>%
   mutate(areas = factor(areas,
-    level = c(
-      "overlap_area",
-      "orca_area",
-      "shark_area",
-      "full_area"
-    )
+                        level = c(
+                          "overlap_area",
+                          "orca_area",
+                          "shark_area",
+                          "full_area"
+                        )
   ))
 
 data_stat_area <- data_dive_longer %>%
@@ -605,61 +607,6 @@ data_stat_area <- data_dive_longer %>%
 ```
 
 ```{r}
-predator_stat <- ggplot(
-  data_descriptive_area,
-  aes(
-    y = mean,
-    x = areas,
-    fill = areas,
-    group = in_out
-  )
-) +
-  geom_errorbar(
-    aes(
-      ymin = mean - sd,
-      ymax = mean + sd
-    ),
-    # reduce size of horizontal bar of the errorbar
-    width = 0.1,
-    position = position_dodge(.9)
-  ) +
-  geom_bar(
-    stat = "identity",
-    position = "dodge",
-    show.legend = FALSE
-  ) +
-  scale_fill_manual(
-    values = c("#E1E826", "#E66100", "#9A6BEC", "#004D40")
-  ) +
-  scale_y_continuous(
-    labels = function(x) {
-      scales::percent(abs(x), 1)
-    }
-  ) +
-  scale_x_discrete(
-    labels = function(x) {
-      lapply(x, function(x) (str_split(str_to_title(x), "_"))[[1]][1])
-    }
-  ) +
-  # new scale
-  new_scale_fill() +
-  geom_bar(
-    data = data_descriptive_area,
-    aes(
-      y = mean,
-      x = areas,
-      fill = rep(letters[1:2], 4),
-      group = in_out,
-      alpha = 0.4
-    ),
-    stat = "identity",
-    position = position_dodge(width = 0.9)
-  ) +
-  scale_fill_manual(
-    name = "Status",
-    labels = c("inside", "outside"),
-    values = c("grey30", "grey70")
-  ) +
   # geom_signif(
   #   # y_position = data_descriptive_area %>%
   #   #   mutate(N = mean + sd) %>%
@@ -671,26 +618,190 @@ predator_stat <- ggplot(
   #   xmax = c(1.4, 2.4, 3.4, 4.4),
   #   annotations = if_else(
   #     data_stat_area$p.signif == "****",
-  #     "***",
-  #     data_stat_area$p.signif
-  #   )
-  # ) +
-  coord_cartesian(ylim = c(0, 1)) +
-  labs(
-    x = "Area",
-    y = "Average Percentage (%)"
+#     "***",
+#     data_stat_area$p.signif
+#   )
+# ) +
+```
+
+```{r}
+inside_bar_plot = data_descriptive_area %>%
+  mutate(
+    mean = if_else(in_out == "outside", -mean, mean),
+    sd = if_else(in_out == "outside", -sd, sd),
+    se = if_else(in_out == "outside", -se, se)
+  ) %>%
+  filter(in_out == "inside") %>%
+  ggplot(aes(x = mean, y = areas, fill = areas)) +
+  facet_grid(in_out ~ ., scales = "free_y") +
+  geom_col(show.legend = F) +
+  scale_fill_manual(values = c("#E1E826", "#E66100", "#9A6BEC", "#004D40")) +
+  new_scale_fill() +
+  geom_col(
+    show.legend = F,
+    mapping = aes(
+      x = mean,
+      y = areas,
+      fill = in_out),
+    alpha = 0.3
   ) +
-  guides(alpha = "none") +
+  scale_fill_manual(values = c("grey70")) +
+  geom_errorbar(mapping = aes(xmin = -se,
+                              xmax = se),
+                # reduce size of horizontal bar of the errorbar
+                width = 0.05) +
+  coord_flip(xlim = c(0, max(data_descriptive_area$mean))) +
+  scale_x_continuous(
+    breaks = c(-0.6,-0.4,-0.2, 0.2, 0.4, 0.6),
+    expand = c(0, 0),
+    labels = function(x) {
+      scales::percent(abs(x), 1)
+    }
+  ) +
+  scale_y_discrete(
+    labels = function(x) {
+      lapply(x, function(x)
+        (str_split(str_to_title(x), "_"))[[1]][1])
+    }
+  ) +
   theme(
+    panel.spacing.y = unit(0, "mm"),
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     panel.background = element_blank(),
-    axis.line = element_line(arrow = arrow(
+    axis.line.y = element_line(arrow = arrow(
       angle = 20,
       length = unit(.10, "inches"),
       type = "closed"
-    ))
+    )),
+    axis.title = element_blank(),
+    axis.ticks.length.x = unit(0, units = "mm"),
+    axis.text.x = element_blank()
   )
+
+outside_bar_plot = data_descriptive_area %>%
+  mutate(
+    mean = if_else(in_out == "outside",-mean, mean),
+    sd = if_else(in_out == "outside",-sd, sd),
+    se = if_else(in_out == "outside",-se, se)
+  ) %>%
+  filter(in_out == "outside") %>% 
+  ggplot(aes(x = mean, y = areas, fill = areas)) +
+  facet_grid(in_out ~ ., scales = "free_y") +
+  geom_col(show.legend = F) +
+  scale_fill_manual(values = c("#E1E826", "#E66100", "#9A6BEC", "#004D40")) +
+  new_scale_fill() +
+  geom_col(show.legend = F, mapping = aes(x = mean, 
+                                          y = areas, 
+                                          fill = in_out),
+                                          alpha = 0.3) +
+  scale_fill_manual(values = c("grey30")) +
+  geom_errorbar(
+    mapping = aes(
+      xmin = -se,
+      xmax = se
+    ),
+    # reduce size of horizontal bar of the errorbar
+    width = 0.05
+  ) +
+  coord_flip(xlim = c(-max(data_descriptive_area$mean), 0)) +
+  scale_x_continuous(
+    # breaks = c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6),
+    expand = c(0, 0),
+    labels = function(x) {
+      scales::percent(abs(x), 1)
+    }
+  ) +
+  scale_y_discrete(
+    labels = function(x) {
+      lapply(x, function(x) (str_split(str_to_title(x), "_"))[[1]][1])
+    }
+  ) +
+  labs(y = "Areas") +
+  theme(panel.spacing.y = unit(0, "mm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line.y = element_line(arrow = arrow(
+          angle = 20,
+          length = unit(.10, "inches"),
+          type = "closed",
+          ends = "first"
+        )),
+        axis.ticks.length.x = unit(0,units = "mm"),
+        axis.title.y = element_blank())
+
+label_x_bar_plot = ggplot(data.frame(l = "Percentage of benthic dives", 
+                                     x = 1, 
+                                     y = 1)) +
+  geom_text(aes(x, y, label = l, angle = 90)) +
+  theme(aspect.ratio = 10,
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank()) +
+  theme_void()
+```
+
+```{r}
+layout <- "
+ABBBBBBBBBBB
+ACCCCCCCCCCC
+"
+
+predator_stat_choice_1 <- label_x_bar_plot + 
+  # 
+  (inside_bar_plot + theme(plot.margin = unit(c(0,0,0,0), "pt"))) + 
+   (outside_bar_plot + theme(plot.margin = unit(c(0,0,0,0), "pt"))) + 
+  plot_layout(design =layout)
+```
+
+
+
+```{r}
+# https://stackoverflow.com/questions/55015088/back-to-back-barplot-with-independent-axes-r
+predator_stat_choice_2 <- data_descriptive_area %>%
+  ggplot(aes(y = mean, x = areas, fill = areas)) +
+  geom_bar(position = "fill", stat = "identity", show.legend = F) +
+  scale_fill_manual(values = c("#E1E826", "#E66100", "#9A6BEC", "#004D40")) +
+  new_scale_fill() +
+  geom_bar(
+    mapping = aes(y = mean,
+                  x = areas,
+                  fill = in_out),
+                  alpha = 0.3,
+                  position = "fill", 
+                  stat = "identity") +
+  scale_fill_manual(values = c("grey70", "grey30")) +
+  geom_errorbar(
+    data = data_descriptive_area %>%  filter(in_out == "outside"),
+    mapping = aes(
+      ymin = mean -se,
+      ymax = mean + se
+    ),
+    # reduce size of horizontal bar of the errorbar
+    width = 0.05
+  ) +
+  scale_y_continuous(
+    labels = function(x) {
+      scales::percent(abs(x), 1)
+    }
+  ) +
+  scale_x_discrete(
+    labels = function(x) {
+      lapply(x, function(x) (str_split(str_to_title(x), "_"))[[1]][1])
+    }
+  ) +
+  labs(x = "Areas", y = "Percentage of benthic dives", fill ="Status") +
+  theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line.y = element_line(arrow = arrow(
+          angle = 20,
+          length = unit(.10, "inches"),
+          type = "closed"
+        )),
+        axis.ticks.length.x = unit(0,units = "mm"))
 ```
 
 ```{r}
@@ -708,14 +819,24 @@ predator_map <- trip +
   new_scale_fill() +
   # add point
   geom_spatial_point(
-    data = data_dive %>% filter(DiveTypeName == "Benthic"),
-    aes(x = Long, y = Lat),
+    data = data_dive %>% 
+      filter(DiveTypeName == "Benthic"),
+    aes(x = Long, y = Lat, fill = "black"),
     alpha = 0.05,
     shape = 20,
-    fill = "black",
     stroke = NA,
     crs = 4326
   ) +
+  # color palette
+  scale_fill_manual(
+    name = "Dive",
+    labels = "Benthic",
+    values = "black"
+  ) +
+  # should I display legend?
+  guides(fill = "none") +
+  # new scale
+  new_scale_fill() +
   # add spatial polygon
   geom_spatial_polygon(
     data = areas_coord,
@@ -734,34 +855,66 @@ predator_map <- trip +
   ) +
   scale_color_manual(
     values = c("#E66100", "#9A6BEC")
-  )
+  ) + 
+  # set limit from predator_map$layers[[1]]$data
+  coord_sf(xlim=c(-5579139, 5579139), 
+           ylim = c(-8679599,-2642510))
 
-# # reordering layers (continent on top)
-# predator_map$layers <-
-#   c(
-#     predator_map$layers[c(1, 3:length(predator_map$layers))],
-#     predator_map$layers[2]
-#   )
+# reordering layers (continent on top)
+predator_map$layers <-
+  c(
+    predator_map$layers[c(1:2, 4:length(predator_map$layers))],
+    predator_map$layers[3]
+  )
 ```
+
+:::{.panel-tabset}
+
+### Choice 1
 
 ```{r fig-map-3}
 #| fig-cap: "Overlap of female northern elephant seal’s trip (n=424) and predator habitat along with the percentage of benthic dives occurring inside as compared to outside of the habitat. The white star indicates the location of Año Nuevo State Park. Map a) displays orca and shark habitat along the west coast (adapted from Jorgenson, et al. 2019) and black lines represent the trip of all female northern elephant seals studied. Bar graph displays the average percentage of benthic dives occurring either inside or outside of orca habitat and displays the average percentage of benthic dives occurring inside and outside of shark habitat."
-#| fig-height: 8
+#| fig-height: 7
+
+# layout
+layout <- "
+#AAAAAAAAAAAAAAAAAAAAAAA
+#AAAAAAAAAAAAAAAAAAAAAAA
+#AAAAAAAAAAAAAAAAAAAAAAA
+BCCCCCCCCCCCCCCCCCCCCCCC
+BDDDDDDDDDDDDDDDDDDDDDDD
+"
 
 # display
-predator_map / predator_stat + plot_layout(heights = c(1.5, 1))
+(predator_map + theme(legend.position = "none")) +
+  (label_x_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+  (inside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+  (outside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+  plot_layout(design = layout)
 ```
 
+### Choice 2
+
+```{r fig-map-3-bis}
+#| fig-cap: "Overlap of female northern elephant seal’s trip (n=424) and predator habitat along with the percentage of benthic dives occurring inside as compared to outside of the habitat. The white star indicates the location of Año Nuevo State Park. Map a) displays orca and shark habitat along the west coast (adapted from Jorgenson, et al. 2019) and black lines represent the trip of all female northern elephant seals studied. Bar graph displays the average percentage of benthic dives occurring either inside or outside of orca habitat and displays the average percentage of benthic dives occurring inside and outside of shark habitat."
+#| fig-height: 7
+
+# display
+(predator_map +
+  theme(legend.position = "none")) / 
+  (predator_stat_choice_2 +
+     theme(legend.position = "top")) + 
+  plot_layout(heights = c(1.5, 1))
+```
+
+:::
+
 :::{.callout-caution}
-### Any other recommendations?
+### Next steps
 
-* add North
-* scale
-* color
-* rework the delimitation of predator area (something smoother)
-* deal with the grid
+* see if it worth adding the North arrow and a scale
 * add the result of the test (inside vs. outside)
-
+* do we actually need legend for the map (area + bathymetry)?
 :::
 
 ## Figure 4
@@ -771,10 +924,12 @@ predator_map / predator_stat + plot_layout(heights = c(1.5, 1))
 bathy_prop <- data_dive %>%
   # keep only negative bathy
   filter(bathy < 0) %>%
+  # and remove outliers
+  filter(bathy > -6000) %>% 
   # create class of bathymetry
   mutate(bathy_class = fct_rev(cut(
     bathy,
-    seq(-7200, 0, 400),
+    seq(-6000, 0, 400),
     ordered_result = T,
     dig.lab = 4
   ))) %>%
@@ -828,10 +983,12 @@ bathy_prop <- data_dive %>%
 bathy_hist <- data_dive %>%
   # keep only negative bathy
   filter(bathy < 0) %>%
+  # and remove outliers
+  filter(bathy > -6000) %>% 
   # create class of bathymetry
   mutate(bathy_class = fct_rev(cut(
     bathy,
-    seq(-7200, 0, 400),
+    seq(-6000, 0, 400),
     ordered_result = T,
     dig.lab = 4
   ))) %>%
@@ -867,10 +1024,13 @@ bath_plot <- bathy_hist / bathy_prop + plot_layout(heights = c(1, 10))
 dist_coast_prop <- data_dive %>%
   # filter out animal without dist_coast
   filter(dist_coast > 0) %>%
+  # remove outliers
+  filter(dist_coast * 1000 * 111 <= 1900) %>% 
   # create class of bathymetry
   mutate(dist_class = cut(
-    dist_coast,
-    seq(0, 1300, 50),
+    # convert decimal degree/1000
+    dist_coast * 1000 * 111,
+    seq(0, 1900, 100),
     ordered_result = T,
     dig.lab = 4
   )) %>%
@@ -924,10 +1084,13 @@ dist_coast_prop <- data_dive %>%
 dist_coast_hist <- data_dive %>%
   # filter out animal without dist_coast
   filter(dist_coast > 0) %>%
+  # remove outliers
+  filter(dist_coast * 1000 * 111 <= 1900) %>% 
   # create class of bathymetry
   mutate(dist_class = cut(
-    dist_coast,
-    seq(0, 1300, 50),
+    # convert decimal degree/1000
+    dist_coast * 1000 * 111,
+    seq(0, 2000, 100),
     ordered_result = T,
     dig.lab = 4
   )) %>%
@@ -964,10 +1127,12 @@ dist_coast_plot <- dist_coast_hist / dist_coast_prop + plot_layout(heights = c(1
 dist_dep_prop <- data_dive %>%
   # filter out animal without dist_coast
   filter(dist_dep > 0) %>%
+  # remove outliers
+  filter(dist_dep / 1000 < 4200) %>% 
   # create class of bathymetry
   mutate(dist_class = cut(
     dist_dep / 1000,
-    seq(0, 6000, 200),
+    seq(0, 4200, 300),
     ordered_result = T,
     dig.lab = 4
   )) %>%
@@ -1021,10 +1186,12 @@ dist_dep_prop <- data_dive %>%
 dist_dep_hist <- data_dive %>%
   # filter out animal without dist_coast
   filter(dist_coast > 0) %>%
+  # remove outliers
+  filter(dist_dep / 1000 < 4200) %>% 
   # create class of bathymetry
   mutate(dist_class = cut(
     dist_dep / 1000,
-    seq(0, 6000, 200),
+    seq(0, 4200, 300),
     ordered_result = T,
     dig.lab = 4
   )) %>%
@@ -1055,6 +1222,24 @@ dist_dep_hist <- data_dive %>%
 dist_dep_plot <- dist_dep_hist / dist_dep_prop + plot_layout(heights = c(1, 10))
 ```
 
+```{r fig-area-plot-4}
+#| fig-cap: "Proportion of dives performed across entire trip separated by dive type across bathymetry intervals and distance from departure intervals, and displays the proportion of benthic dives occurring over the seals time spent at sea. For graph the largest percentage of benthic dives occurs at the lowest depth then occurs again at higher depths. For graph The highest percentage of benthic dives occurs at the lowest distance from where the seal is first assumed to have departed."
+#| fig-height: 9
+
+# display
+(guide_area() + bath_plot + dist_coast_plot + dist_dep_plot) +
+  plot_layout(nrow = 5, guides = "collect")
+```
+
+:::{.callout-caution}
+### Next step
+
+* Try to keep a similar number of classes among figures
+:::
+
+## Figure 5
+
+
 ```{r}
 # the last plot
 prop_at_sea <- data_dive %>%
@@ -1084,7 +1269,7 @@ prop_at_sea <- data_dive %>%
   filter(DiveTypeName == "Benthic") %>%
   # add class of percentage of time at sea
   mutate(day_class = cut(perc_time_at_sea, seq(0, 100, 5),
-    include.lowest = T
+                         include.lowest = T
   )) %>%
   # by class of percentage of time at sea
   group_by(day_class) %>%
@@ -1122,21 +1307,18 @@ prop_at_sea <- data_dive %>%
   )
 ```
 
-```{r fig-area-plot-4}
-#| fig-cap: "Proportion of dives performed across entire trip separated by dive type across bathymetry intervals and distance from departure intervals, and displays the proportion of benthic dives occurring over the seals time spent at sea. For graph the largest percentage of benthic dives occurs at the lowest depth then occurs again at higher depths. For graph The highest percentage of benthic dives occurs at the lowest distance from where the seal is first assumed to have departed."
-#| fig-height: 15
-
+```{r fig-prop-5}
+#| fig-cap: "Distribution of the percentage of benthic dives during elephant seals' trip to sea expressed as a percentage of time spent at sea."
+#| fig-height: 3
 # display
-(guide_area() + bath_plot + dist_coast_plot + dist_dep_plot + prop_at_sea) +
-  plot_layout(nrow = 6, guides = "collect")
+prop_at_sea
 ```
 
-:::{.callout-caution}
-### Any other recommendations?
+## Extra
 
-* which one we keep?
-* scale?
-* color?
-* investigate the dist from the coast...
+```{r}
+#| include: false
+#| eval: false
+fwrite(data_dive[,.(id, date_start = date, date_end = date + Dduration, lat = Lat, lon = Long, dive_number = DiveNumber, benthic_index = BenthicDiveIndex, corner_index = CornerIndex, dive_type_name = DiveTypeName, dive_type = DiveType)], "./export/dive_data.csv")
+```
 
-:::
