@@ -10,7 +10,7 @@ Just go to https://sesjo.github.io/seal_predator_avoidance_strategy/figures.html
 
 * Compute circular stats and add it to Figure 1
 * Add stats on Figure 2 (already computed)
-* works on legend
+* Work on legends
 * In the same notebook, or in another one, add the Mat & Met
 
 ## Languages and tools
