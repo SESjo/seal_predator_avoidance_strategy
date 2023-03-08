@@ -33,12 +33,6 @@ knitr:
 # Import library
 
 ```{r}
-# data wrangling
-library(tidyr)
-library(dplyr)
-library(purrr)
-library(forcats)
-
 # data viz
 library(ggplot2)
 library(ggh4x)
@@ -49,6 +43,9 @@ library(ggpubr)
 library(grid)
 library(viridis)
 library(ggnewscale)
+
+# table
+library(gt)
 
 # map
 library(ggmap)
@@ -63,9 +60,21 @@ library(ggdensity)
 
 # stat
 library(Hmisc)
+library(circular)
+library(CircStats)
 
 # char
 library(stringr)
+
+# solar angle
+library(oce)
+
+# data wrangling
+library(tidyr)
+library(dplyr)
+library(purrr)
+library(forcats)
+library(lubridate)
 ```
 
 # Setting up custom function
@@ -135,19 +144,19 @@ windrose <-
         geom_hline(
           yintercept = grid,
           colour = "grey20",
-          size = .2
+          linewidth = .2
         )
     }
     plt.dirrose_2 <- plt.dirrose_2 +
       geom_vline(
         xintercept = c(seq(1, 24, 2)),
         colour = "grey30",
-        size = 0.2
+        linewidth = 0.2
       ) + # 24 vertical lines at center of the 30? ranges.
       geom_hline(
         yintercept = maxvalue,
         colour = "white",
-        size = .5
+        linewidth = .5
       ) + # Darker horizontal line as the top border (max).
       # On top of everything we place the histogram bars.
       geom_bar(
@@ -155,7 +164,7 @@ windrose <-
         aes(x = dir.binned, fill = day_night),
         width = 1,
         colour = "black",
-        size = 0.3
+        linewidth = 0.3
       ) +
       # geom_bar(data = data2, aes(x = dir.binned2), width = 1, colour="black", size = 0.3,fill="salmon",alpha=0.9) +
       scale_x_discrete(
@@ -203,7 +212,195 @@ data_dive <- data_dive %>%
   filter(DepartureLocation == "ANNU")
 ```
 
+```{r}
+# get solar angle when data location
+solar_angle_inter <- data_dive %>% 
+  filter(!is.na(Lat)) %>% 
+  mutate(solar_angle = sunAngle(date,Long,Lat)$altitude) %>% 
+  select(id, DiveNumber, solar_angle)
+
+# merge that with data_dive
+data_dive = merge(data_dive,
+             solar_angle_inter,
+             by = c("id", "DiveNumber"), 
+             all.x = T)
+
+# add day-night
+data_dive <- data_dive %>% 
+  mutate(day_night = if_else(solar_angle < -18, "night", "day"))
+```
+
+Let's add a condition based on the difference between the maximum depth reached and the bathymetry to define a benthic dive, *i.e.* if this difference is above xxx m then is not considered as a benthic dives.
+
+```{r}
+data_dive = data_dive %>%
+  # let's duplicate Divetype and DiveType
+  mutate(DiveType2 = DiveType,
+         DiveTypeName2 = DiveTypeName) %>%
+  # change DiveType to include condition on difference
+  # between max depth and bathymetry
+  mutate(
+    DiveType = data.table::fifelse(DiveType == 3 &
+                                     (abs(bathy) - Maxdepth) > 100, 0, DiveType),
+    DiveTypeName = data.table::fifelse(
+      DiveTypeName == "Benthic" &
+        (abs(bathy) - Maxdepth) > 100,
+      "Transit",
+      DiveTypeName
+    )
+  )
+```
+
 # Data Visualisation
+
+## Table 1
+
+```{r}
+data_dive %>%
+  # careful, needs to be changed as we remove some individuals we should keep
+  filter(!is.na(Lat)) %>% 
+  group_by(id) %>%
+  mutate(deployment = first(format(date, format = "%Y"))) %>%
+  group_by(year = deployment, id) %>%
+  summarise(
+    n_dives_ind = length(DiveNumber),
+    n_benthic_dives_ind = length(DiveNumber[DiveTypeName == "Benthic"]),
+    n_benthic_dives_ind_in_shark = length(DiveNumber[DiveTypeName == "Benthic" &
+                                                       shark_area == TRUE]),
+    n_benthic_dives_ind_in_orca = length(DiveNumber[DiveTypeName == "Benthic" &
+                                                      orca_area == TRUE]),
+    hour_day_departure = first(as.numeric(format(date_tz[DiveTypeName == "Benthic"], 
+                                                 format = "%H"))),
+    hour_day_arrival = last(as.numeric(format(date_tz[DiveTypeName == "Benthic"], 
+                                                 format = "%H"))),
+    .groups = "drop"
+  ) %>% 
+  group_by(year) %>% 
+  summarise(
+    n_ind = length(id),
+    n_dives = sum(n_dives_ind),
+    n_benthic_dives = sum(n_benthic_dives_ind),
+    n_benthic_dives_proportion = sum(n_benthic_dives)/sum(n_dives_ind),
+    n_benthic_dives_in_shark_proportion = sum(n_benthic_dives_ind_in_shark)/sum(n_benthic_dives),
+    n_benthic_dives_in_orca_proportion = sum(n_benthic_dives_ind_in_orca)/sum(n_benthic_dives),
+    n_dives_mean = mean(n_dives_ind),
+    n_dives_plus_minus = "±",
+    n_dives_sd = sd(n_dives_ind),
+    n_benthic_dives_mean = mean(n_benthic_dives_ind),
+    n_benthic_dives_plus_minus = "±",
+    n_benthic_dives_sd = sd(n_benthic_dives_ind),
+    hour_day_departure_mean = mean(hour_day_departure),
+    hour_day_departure_plus_minus = "±",
+    hour_day_departure_sd = sd(hour_day_departure),
+    hour_day_arrival_mean = mean(hour_day_arrival),
+    hour_day_arrival_plus_minus = "±",
+    hour_day_arrival_sd = sd(hour_day_arrival)
+  ) %>% 
+  gt()%>% 
+  tab_spanner(
+    label = "% benthic dives within",
+    columns = c("n_benthic_dives_in_shark_proportion",
+                "n_benthic_dives_in_orca_proportion")
+  ) %>% 
+  tab_spanner(
+    label = "# dives",
+    columns = c("n_dives_mean",
+                "n_dives_plus_minus",
+                "n_dives_sd")
+  ) %>% 
+  tab_spanner(
+    label = "# benthic dives",
+    columns = c("n_benthic_dives_mean",
+                "n_benthic_dives_plus_minus",
+                "n_benthic_dives_sd")
+  ) %>% 
+  tab_spanner(
+    label = "Hour departure",
+    columns = c("hour_day_departure_mean",
+                "hour_day_departure_plus_minus",
+                "hour_day_departure_sd")
+  ) %>% 
+  tab_spanner(
+    label = "Hour arrival",
+    columns = c("hour_day_arrival_mean",
+                "hour_day_arrival_plus_minus",
+                "hour_day_arrival_sd")
+  ) %>% 
+  tab_spanner(
+    label = "Per individuals",
+    columns = c(
+      "n_dives_mean",
+      "n_dives_plus_minus",
+      "n_dives_sd",
+      "n_benthic_dives_mean",
+      "n_benthic_dives_plus_minus", 
+      "n_benthic_dives_sd",
+      "hour_day_departure_mean",
+      "hour_day_departure_plus_minus",
+      "hour_day_departure_sd",
+      "hour_day_arrival_mean",
+      "hour_day_arrival_plus_minus",
+      "hour_day_arrival_sd")
+  )  %>% 
+    # rename columns
+  cols_label(
+    n_ind = "# seals",
+    n_dives = "# dives",
+    n_benthic_dives = "# benthic dives",
+    n_benthic_dives_proportion = "% benthic dives",
+    n_benthic_dives_in_shark_proportion = "shark area",
+    n_benthic_dives_in_orca_proportion = "orca area",
+    n_dives_mean = md("Mean"),
+    n_dives_plus_minus = md("±"),
+    n_dives_sd = md("SD"),
+    n_benthic_dives_mean = md("Mean"),
+    n_benthic_dives_plus_minus = md("±"), 
+    n_benthic_dives_sd = md("SD"),
+    hour_day_departure_mean = md("Mean"),
+    hour_day_departure_plus_minus = md("±"),
+    hour_day_departure_sd = md("SD"),
+    hour_day_arrival_mean = md("Mean"),
+    hour_day_arrival_plus_minus = md("±"),
+    hour_day_arrival_sd = md("SD")
+  ) %>% 
+  fmt_percent(
+    columns = c("n_benthic_dives_in_shark_proportion",
+               "n_benthic_dives_in_orca_proportion",
+               "n_benthic_dives_proportion"),
+    decimal = 1
+  ) %>% 
+    fmt_number(
+    columns = c("n_dives",
+                "n_benthic_dives"),
+    decimal = 0
+  ) %>%
+    fmt_number(
+    columns = c(      
+      "n_dives_mean",
+      "n_dives_sd",
+      "n_benthic_dives_mean",
+      "n_benthic_dives_sd",
+      "hour_day_departure_mean",
+      "hour_day_departure_sd",
+      "hour_day_arrival_mean",
+      "hour_day_arrival_sd"),
+    decimal = 1,
+    use_seps = FALSE
+  ) %>% 
+  # color rows
+  opt_row_striping()
+```
+
+:::{.callout-caution}
+### Next step
+
+* Alignement
+* Wording
+* Adding/removing info
+* color columns
+* circular mean and sd instead of regular
+* add individuals without location data
+:::
 
 ## Figure 1
 
@@ -225,6 +422,63 @@ data_windrose <- data_dive %>%
            date == max(date) |
            DiveTypeName == "Benthic")
 ```
+
+```{r}
+# departure
+test_departure = r.test(conversion.circular(
+  circular(
+    data_windrose %>%
+      group_by(id) %>%
+      filter(DiveNumber == 1) %>%
+      mutate(time = hour(date_tz) + 
+               minute(date_tz)/60 + 
+               second(date_tz)/(60*60)) %>% pull(time),
+    units = "hours"
+  ),
+  units = "radians"
+))
+
+# arrival
+test_arrival = r.test(conversion.circular(
+  circular(
+    data_windrose %>%
+      group_by(id) %>%
+      filter(date_tz == max(date_tz)) %>%
+      mutate(time = hour(date_tz) + 
+               minute(date_tz)/60 + 
+               second(date_tz)/(60*60)) %>% pull(time),
+    units = "hours"
+  ),
+  units = "radians"
+))
+
+# benthic
+test_benthic = r.test(conversion.circular(
+  circular(
+    data_windrose %>%
+      group_by(id) %>%
+      filter(DiveTypeName == "Benthic") %>%
+      mutate(time = hour(date_tz) + 
+               minute(date_tz)/60 + 
+               second(date_tz)/(60*60)) %>% 
+      pull(time),
+    units = "hours"
+  ),
+  units = "radians"
+))
+
+# convert back to hours
+conversion.circular(circular(test_departure$r.bar, 
+                             units = "radians"), 
+                    units = "hours")
+conversion.circular(circular(test_arrival$r.bar, 
+                             units = "radians"), 
+                    units = "hours")
+conversion.circular(circular(test_benthic$r.bar, 
+                             units = "rad"), 
+                    units = "hours")
+```
+
 
 ```{r fig-windrose-1}
 #| fig-cap: "Circular histogram plots displaying the times (in hours) of when female northern elephant seals (n = 403) perform their first recorded dive upon departing for their foraging trip (a), the last dive performed before returning from their foraging trip (b), and the time when they perform all benthic dives across their foraging trip (c)."
@@ -265,6 +519,26 @@ windrose_benthic <- data_windrose %>%
     axis.title.y = element_blank()
   )
 
+# for benthic dives with angle
+# windrose_angle_benthic <- 
+  data_windrose %>%
+  group_by(id) %>%
+  filter(DiveTypeName == "Benthic") %>%
+  mutate(solar_angle_cut = as.numeric(trunc(solar_angle))) %>%
+  group_by(solar_angle_cut) %>%
+  summarise(nb_ind_hour = n()) %>%
+  mutate(origin = "Benthic")  %>% 
+  ggplot(.,aes(x=solar_angle_cut,y=nb_ind_hour)) +
+  geom_col() +
+  geom_vline(xintercept = c(-6, -12, -18), linetype = "dashed")
+
+
+  windrose(., grid = c(3000, 6000, 9000), facet = T) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
 # combine all
 (windrose_departure + windrose_arrival + windrose_benthic) +
   plot_layout(
@@ -272,6 +546,49 @@ windrose_benthic <- data_windrose %>%
   ) &
   theme(legend.position = "top")
 ```
+
+```{r}
+data_windrose %>%
+  filter(DiveTypeName == "Benthic") %>%
+  mutate(day = as.Date(date)) %>%
+  group_by(id, day, day_night) %>%
+  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  group_by(id, day_night) %>%
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive),
+            .groups = "drop") %>% 
+  ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
+  geom_boxplot() +
+  labs(x = "Time of the day", y = "Average number of dives per individual")
+```
+
+
+```{r}
+data_windrose %>%
+  filter(DiveTypeName == "Benthic") %>%
+  mutate(day = as.Date(date)) %>%
+  group_by(id, day, day_night) %>%
+  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  group_by(id, day_night) %>%
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive)) %>%
+  ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
+  geom_boxplot() +
+  labs(x = "Time of the day", y = "Average number of dives per individual")
+```
+
+```{r}
+data_windrose %>%
+  filter(DiveTypeName == "Benthic") %>%
+  mutate(hour = lubridate::hour(date),
+         day = as.Date(date)) %>%
+  group_by(id, day, hour, day_night) %>%
+  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  group_by(id, day_night) %>%
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive)) %>%
+  ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
+  geom_boxplot() +
+  labs(x = "Time of the day", y = "Average number of dives per individual per hour")
+```
+
 
 :::{.callout-caution}
 ### Next step
