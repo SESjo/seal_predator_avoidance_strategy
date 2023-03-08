@@ -4,7 +4,10 @@ This is a repository to save/backup most of the notebooks related to this paper
 
 ## Usage
 
-Just go to https://sesjo.github.io/seal_predator_avoidance_strategy/figures.html.
+Just go to:
+
+* https://sesjo.github.io/seal_predator_avoidance_strategy/figures.html.
+* https://sesjo.github.io/seal_predator_avoidance_strategy/benthic_investigation.html.
 
 ## Roadmap
 
