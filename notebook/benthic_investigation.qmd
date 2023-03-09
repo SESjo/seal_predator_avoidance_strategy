@@ -906,7 +906,7 @@ print(paste0("The average time is ", round(conv_test[[1]],1), " (p-value: ", rou
 ```{r fig-boxplot-all}
 #| fig-cap: "Boxplot of the number of (all) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot = data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
@@ -916,11 +916,23 @@ data_dive %>%
   group_by(id, day, hour, day_night) %>%
   summarise(nb_benthic_dive = n(), .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive)) %>%
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
        y = "Average number of dives per individual per hour")
+```
+```{r}
+# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
+broom::tidy(wilcox.test(
+  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
+  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
+)) %>%
+  gt() %>%
+  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
 ```
 
 ## diff<50
@@ -928,7 +940,7 @@ data_dive %>%
 ```{r fig-boxplot-50}
 #| fig-cap: "Boxplot of the number of (diff<50) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
@@ -938,11 +950,24 @@ data_dive %>%
   group_by(id, day, hour, day_night) %>%
   summarise(nb_benthic_dive = n(), .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive)) %>%
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
        y = "Average number of dives per individual per hour")
+```
+
+```{r}
+# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
+broom::tidy(wilcox.test(
+  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
+  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
+)) %>%
+  gt() %>%
+  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
 ```
 
 ## diff<100
@@ -950,7 +975,7 @@ data_dive %>%
 ```{r fig-boxplot-100}
 #| fig-cap: "Boxplot of the number of (diff<100) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
@@ -960,19 +985,31 @@ data_dive %>%
   group_by(id, day, hour, day_night) %>%
   summarise(nb_benthic_dive = n(), .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive)) %>%
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
        y = "Average number of dives per individual per hour")
 ```
 
+```{r}
+# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
+broom::tidy(wilcox.test(
+  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
+  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
+)) %>%
+  gt() %>%
+  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
+```
 ## diff<150
 
 ```{r fig-boxplot-150}
 #| fig-cap: "Boxplot of the number of (diff<150) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
@@ -982,11 +1019,24 @@ data_dive %>%
   group_by(id, day, hour, day_night) %>%
   summarise(nb_benthic_dive = n(), .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive)) %>%
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
        y = "Average number of dives per individual per hour")
+```
+
+```{r}
+# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
+broom::tidy(wilcox.test(
+  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
+  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
+)) %>%
+  gt() %>%
+  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
 ```
 
 ## diff<200
@@ -994,7 +1044,7 @@ data_dive %>%
 ```{r fig-boxplot-200}
 #| fig-cap: "Boxplot of the number of (diff<200) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
@@ -1004,11 +1054,24 @@ data_dive %>%
   group_by(id, day, hour, day_night) %>%
   summarise(nb_benthic_dive = n(), .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive)) %>%
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
        y = "Average number of dives per individual per hour")
+```
+
+```{r}
+# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
+broom::tidy(wilcox.test(
+  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
+  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
+)) %>%
+  gt() %>%
+  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
 ```
 
 :::
@@ -1023,18 +1086,33 @@ data_dive %>%
 ```{r fig-boxplotbis-all}
 #| fig-cap: "Boxplot of the average number of (all) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
   filter(DiveTypeName == "Benthic") %>%
   group_by(id, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  summarise(nb_benthic_dive = n(), .groups = "drop")
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim=c(0,1000))+
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+       y = "Number of benthic dives per individual")
+```
+
+```{r}
+broom::tidy(glm(
+  nb_benthic_dive ~ day_night,
+  family = "quasipoisson",
+  data = data_plot
+)) %>%
+  gt() %>%
+  fmt_number(columns = 2:5,
+             decimals = 2,
+             suffixing = TRUE) %>%
+  tab_header(title = "nb_benthic_dive ~ day_night")
 ```
 
 ## diff<50
@@ -1042,18 +1120,33 @@ data_dive %>%
 ```{r fig-boxplotbis-50}
 #| fig-cap: "Boxplot of the average number of (diff<50) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
   filter(DiveTypeName_50 == "Benthic") %>%
   group_by(id, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  summarise(nb_benthic_dive = n(), .groups = "drop")
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim=c(0,250))+
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+       y = "Number of benthic dives per individual")
+```
+
+```{r}
+broom::tidy(glm(
+  nb_benthic_dive ~ day_night,
+  family = "quasipoisson",
+  data = data_plot
+)) %>%
+  gt() %>%
+  fmt_number(columns = 2:5,
+             decimals = 2,
+             suffixing = TRUE) %>%
+  tab_header(title = "nb_benthic_dive ~ day_night")
 ```
 
 ## diff<100
@@ -1061,18 +1154,33 @@ data_dive %>%
 ```{r fig-boxplotbis-100}
 #| fig-cap: "Boxplot of the average number of (diff<100) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
   filter(DiveTypeName_100 == "Benthic") %>%
   group_by(id, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  summarise(nb_benthic_dive = n(), .groups = "drop")
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim=c(0,250))+
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+       y = "Number of benthic dives per individual")
+```
+
+```{r}
+broom::tidy(glm(
+  nb_benthic_dive ~ day_night,
+  family = "quasipoisson",
+  data = data_plot
+)) %>%
+  gt() %>%
+  fmt_number(columns = 2:5,
+             decimals = 2,
+             suffixing = TRUE) %>%
+  tab_header(title = "nb_benthic_dive ~ day_night")
 ```
 
 ## diff<150
@@ -1080,18 +1188,33 @@ data_dive %>%
 ```{r fig-boxplotbis-150}
 #| fig-cap: "Boxplot of the average number of (diff<150) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
   filter(DiveTypeName_150 == "Benthic") %>%
   group_by(id, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  summarise(nb_benthic_dive = n(), .groups = "drop")
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim=c(0,250))+
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+       y = "Number of benthic dives per individual")
+```
+
+```{r}
+broom::tidy(glm(
+  nb_benthic_dive ~ day_night,
+  family = "quasipoisson",
+  data = data_plot
+)) %>%
+  gt() %>%
+  fmt_number(columns = 2:5,
+             decimals = 2,
+             suffixing = TRUE) %>%
+  tab_header(title = "nb_benthic_dive ~ day_night")
 ```
 
 ## diff<200
@@ -1099,18 +1222,33 @@ data_dive %>%
 ```{r fig-boxplotbis-200}
 #| fig-cap: "Boxplot of the average number of (diff<200) benthic dives per hour and individual accross day-time and night-time"
 #| 
-data_dive %>%
+data_plot <- data_dive %>%
   # get rid of data without location information
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
   filter(DiveTypeName_200 == "Benthic") %>%
   group_by(id, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  summarise(nb_benthic_dive = n(), .groups = "drop")
+
+data_plot %>% 
   ggplot(aes(x = day_night, y = nb_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim=c(0,250))+
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+       y = "Number of benthic dives per individual")
+```
+
+```{r}
+broom::tidy(glm(
+  nb_benthic_dive ~ day_night,
+  family = "quasipoisson",
+  data = data_plot
+)) %>%
+  gt() %>%
+  fmt_number(columns = 2:5,
+             decimals = 2,
+             suffixing = TRUE) %>%
+  tab_header(title = "nb_benthic_dive ~ day_night")
 ```
 
 :::
