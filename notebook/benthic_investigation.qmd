@@ -49,6 +49,7 @@ library(ggnewscale)
 library(gt)
 
 # map
+library(rnaturalearth)
 library(ggmap)
 library(ggsn)
 library(sf)
@@ -76,6 +77,10 @@ library(dplyr)
 library(purrr)
 library(forcats)
 library(lubridate)
+
+# model
+library(lme4)
+library(fitdistrplus)
 ```
 
 # Setting up custom function
@@ -200,6 +205,38 @@ windrose <-
   }
 ```
 
+## `getNightLength`
+
+Based on here: [https://stackoverflow.com/questions/59566553/calculate-night-length-in-r](https://stackoverflow.com/questions/59566553/calculate-night-length-in-r)
+
+```{r}
+getNightLength <- function(survey_date, latitude, longitude)
+{
+  # survey_date <- strptime(survey_date, "%d/%m/%y")
+  time_origin <- strptime("01/01/2000 12:00", "%d/%m/%Y %H:%M")
+  n <- as.numeric(difftime(survey_date, time_origin, units = "days"))
+  Jstar <- n - longitude / 360
+  M <- (357.5291 + 0.98560028 * Jstar) %% 360
+  C <- 1.9148 * sin(M * 2*pi/360) + 
+       0.0200 * sin(2*M * 2*pi/360) + 
+       0.0003 * sin(3*M * 2*pi/360)
+  lambda <- (M + C + 180 + 102.9372) %% 360
+  Jtransit <- as.double(2451545.000) + 
+              as.double(Jstar) + 
+              as.double(0.0053 * sin(M * 2*pi/360)) - 
+              as.double(0.0069 * sin(lambda * 4*pi/360))
+  sindelta <- sin(lambda * 2*pi/360) * sin(23.44 * 2*pi/360)
+  delta <- asin(sindelta) * 360/(2*pi)
+  cos_omega <- (sin(-0.83 * 2*pi/360) - (sindelta * sin(latitude * 2*pi/360)))/
+                (cos(latitude * 2*pi/360) * cos(delta * 2*pi/360))
+  omega <- acos(cos_omega) * 360 / (2*pi)
+  Jrise <- Jtransit - omega / 360
+  Jset <- Jtransit + omega /360
+  return((1 - (Jset - Jrise)) * 24)
+}
+```
+
+
 # Import data
 
 Let's load `data_dive`, *i.e.* the output of `data_wrangling.qmd`, and filter only on animals leaving from Ano Nuevo.
@@ -277,6 +314,8 @@ data_dive = data_dive %>%
   )
 ```
 
+
+
 # Maps
 
 ```{r}
@@ -339,29 +378,33 @@ df_kernel_dens_sf <- st_as_sf(
 )
 
 # kernel density estimation
-df_kernel_dens_sf_kde <- st_kde(df_kernel_dens_sf,
-                                H = diag(c(
-                                  MASS::bandwidth.nrd(
-                                    sf::st_coordinates(df_kernel_dens_sf)[, 1]
-                                  ),
-                                  MASS::bandwidth.nrd(
-                                    sf::st_coordinates(df_kernel_dens_sf)[, 2]
-                                  )
-                                ) / 4)^2
+df_kernel_dens_sf_kde <- st_kde(
+  x = df_kernel_dens_sf,
+  # boundary = ne_coastline(scale = 110, returnclass = "sf"),
+  H = diag(c(
+    MASS::bandwidth.nrd(
+      sf::st_coordinates(df_kernel_dens_sf)[, 1]
+    ),
+    MASS::bandwidth.nrd(
+      sf::st_coordinates(df_kernel_dens_sf)[, 2]
+    )
+  ) / 4)^2
 )
 
 # https://github.com/r-spatial/sf/issues/1762
 sf::sf_use_s2(FALSE)
 
 # plot
-trip +
+test = trip +
   # new scale
   new_scale_fill() +
   # kernel
+  # ggplot(data=ne_coastline(scale = 110, returnclass = "sf"))+geom_sf()+
   geom_sf(
     data = st_get_contour(
       # geospatial kernel
       df_kernel_dens_sf_kde,
+      # kde_test,
       # probabilities
       cont = c(50, 80, 95, 99)
     ),
@@ -378,6 +421,12 @@ trip +
   # title
   labs(title = "All Benthic Dives",
        subtitle = paste(nrow(df_kernel_dens), "dives"))
+
+# reorder layers
+test$layers = test$layers[c(1,2,4,3)]
+
+# plot 
+test
 ```
 
 ## diff<50
@@ -419,7 +468,7 @@ df_kernel_dens_sf_kde <- st_kde(df_kernel_dens_sf,
 sf::sf_use_s2(FALSE)
 
 # plot
-trip +
+test = trip +
   # new scale
   new_scale_fill() +
   # kernel
@@ -443,6 +492,12 @@ trip +
   # title
   labs(title = "Benthic Dives with bathy-max_depth<50",
        subtitle = paste(nrow(df_kernel_dens), "dives"))
+
+# reorder layers
+test$layers = test$layers[c(1,2,4,3)]
+
+# plot 
+test
 ```
 
 ## diff<100
@@ -484,7 +539,7 @@ df_kernel_dens_sf_kde <- st_kde(df_kernel_dens_sf,
 sf::sf_use_s2(FALSE)
 
 # plot
-trip +
+test = trip +
   # new scale
   new_scale_fill() +
   # kernel
@@ -508,6 +563,12 @@ trip +
   # title
   labs(title = "Benthic Dives with bathy-max_depth<100",
        subtitle = paste(nrow(df_kernel_dens), "dives"))
+
+# reorder layers
+test$layers = test$layers[c(1,2,4,3)]
+
+# plot 
+test
 ```
 
 ## diff<150
@@ -549,7 +610,7 @@ df_kernel_dens_sf_kde <- st_kde(df_kernel_dens_sf,
 sf::sf_use_s2(FALSE)
 
 # plot
-trip +
+test = trip +
   # new scale
   new_scale_fill() +
   # kernel
@@ -573,6 +634,12 @@ trip +
   # title
   labs(title = "Benthic Dives with bathy-max_depth<150",
        subtitle = paste(nrow(df_kernel_dens), "dives"))
+
+# reorder layers
+test$layers = test$layers[c(1,2,4,3)]
+
+# plot 
+test
 ```
 
 ## diff<200
@@ -614,7 +681,7 @@ df_kernel_dens_sf_kde <- st_kde(df_kernel_dens_sf,
 sf::sf_use_s2(FALSE)
 
 # plot
-trip +
+test = trip +
   # new scale
   new_scale_fill() +
   # kernel
@@ -638,6 +705,13 @@ trip +
   # title
   labs(title = "Benthic Dives with bathy-max_depth<200",
        subtitle = paste(nrow(df_kernel_dens), "dives"))
+
+
+# reorder layers
+test$layers = test$layers[c(1,2,4,3)]
+
+# plot 
+test
 ```
 :::
 
@@ -903,6 +977,8 @@ print(paste0("The average time is ", round(conv_test[[1]],1), " (p-value: ", rou
 
 ## All
 
+### Graph
+
 ```{r fig-boxplot-all}
 #| fig-cap: "Boxplot of the number of (all) benthic dives per hour and individual accross day-time and night-time"
 #| 
@@ -914,28 +990,100 @@ data_plot = data_dive %>%
   mutate(hour = lubridate::hour(date),
          day = as.Date(date)) %>%
   group_by(id, day, hour, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  summarise(nb_benthic_dive = n(), 
+            mean_dive_duration = mean(Dduration),
+            .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive),
+            mean_dive_duration = mean(mean_dive_duration),
+            .groups = "drop")
 
 
 data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
-```
-```{r}
-# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
-broom::tidy(wilcox.test(
-  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
-  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
-)) %>%
-  gt() %>%
-  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
+       y = "Average number of benthic dives per seal per hour")
 ```
 
+### Model
+
+```{r fig-fit-data-all}
+#| fig-cap: Result from `descdist` function to determine the best distribution to use for data modelling
+
+# determine what distribution would best describe our data
+descdist(data_plot$nb_average_benthic_dive, discrete = FALSE)
+```
+
+Based on @fig-fit-data-all, it seems that a `gamma` distribution would be the best to model this dataset.
+
+```{r}
+# model
+mdl_all = glmer(nb_average_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                 (1|id), 
+                family = Gamma,
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               # ordered = T,
+                                                               levels=c("night",
+                                                                      "day"))))
+# summary
+broom.mixed::tidy(mdl_all) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
+```
+
+### Go Further...
+
+```{r}
+data_plot = data_dive %>%
+  # get rid of data without location information
+  filter(!is.na(Lat)) %>%
+  # keep all benthic dives
+  filter(DiveTypeName == "Benthic") %>%
+  # I'm not so sure about this part..
+  mutate(period_duration = if_else(
+    day_night == "night",
+    getNightLength(date, Lat, Long),
+    24 - getNightLength(date, Lat, Long)
+  )) %>%
+  group_by(id, day_night) %>%
+  summarise(
+    nb_benthic_dive = n(),
+    mean_dive_duration = mean(Dduration),
+    mean_period_duration = mean(period_duration),
+    .groups = "drop"
+  )
+```
+
+For more information: [https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion](https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion)
+
+```{r}
+# model
+mdl_all_extra = glmer(nb_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                  scale(mean_period_duration) +
+                 (1|id), 
+                family = "poisson",
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               # ordered = T,
+                                                               levels=c("day",
+                                                                      "night"))))
+# summary
+broom.mixed::tidy(mdl_all_extra) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
+```
+
+```{r}
+qqnorm(residuals(mdl_all_extra))
+qqline(residuals(mdl_all_extra))
+```
+
+
 ## diff<50
+
+### Graph
 
 ```{r fig-boxplot-50}
 #| fig-cap: "Boxplot of the number of (diff<50) benthic dives per hour and individual accross day-time and night-time"
@@ -948,29 +1096,98 @@ data_plot <- data_dive %>%
   mutate(hour = lubridate::hour(date),
          day = as.Date(date)) %>%
   group_by(id, day, hour, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  summarise(nb_benthic_dive = n(), 
+            mean_dive_duration = mean(Dduration),
+            .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive),
+            mean_dive_duration = mean(mean_dive_duration),
+            .groups = "drop")
 
 
 data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+       y = "Average number of benthic dives per seal per hour")
+```
+
+### Model
+
+```{r fig-fit-data-50}
+#| fig-cap: Result from `descdist` function to determine the best distribution to use for data modelling
+
+# determine what distribution would best describe our data
+descdist(data_plot$nb_average_benthic_dive, discrete = FALSE)
+```
+
+Based on @fig-fit-data-50, it seems that a `gamma` distribution would be the best to model this dataset.
+
+```{r}
+# model
+mdl_50 = glmer(nb_average_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                 (1|id), 
+                family = Gamma,
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               levels=c("night",
+                                                                      "day"))))
+# summary
+broom.mixed::tidy(mdl_50) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
+```
+
+### Go Further...
+
+```{r}
+data_plot = data_dive %>%
+  # get rid of data without location information
+  filter(!is.na(Lat)) %>%
+  # keep all benthic dives
+  filter(DiveTypeName_50 == "Benthic") %>%
+  # I'm not so sure about this part..
+  mutate(period_duration = if_else(
+    day_night == "night",
+    getNightLength(date, Lat, Long),
+    24 - getNightLength(date, Lat, Long)
+  )) %>%
+  group_by(id, day_night) %>%
+  summarise(
+    nb_benthic_dive = n(),
+    mean_dive_duration = mean(Dduration),
+    mean_period_duration = mean(period_duration),
+    .groups = "drop"
+  )
+```
+
+For more information: [https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion](https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion)
+
+```{r}
+# model
+mdl_50_extra = glmer(nb_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                  scale(mean_period_duration) +
+                 (1|id), 
+                family = "poisson",
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               # ordered = T,
+                                                               levels=c("day",
+                                                                      "night"))))
+# summary
+broom.mixed::tidy(mdl_50_extra) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
 ```
 
 ```{r}
-# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
-broom::tidy(wilcox.test(
-  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
-  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
-)) %>%
-  gt() %>%
-  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
+qqnorm(residuals(mdl_50_extra))
+qqline(residuals(mdl_50_extra))
 ```
 
 ## diff<100
+
+### Graph
 
 ```{r fig-boxplot-100}
 #| fig-cap: "Boxplot of the number of (diff<100) benthic dives per hour and individual accross day-time and night-time"
@@ -982,29 +1199,99 @@ data_plot <- data_dive %>%
   filter(DiveTypeName_100 == "Benthic") %>%
   mutate(hour = lubridate::hour(date),
          day = as.Date(date)) %>%
-  group_by(id, day, hour, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  group_by(id, day, hour, day_night)  %>%
+  summarise(nb_benthic_dive = n(), 
+            mean_dive_duration = mean(Dduration),
+            .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive),
+            mean_dive_duration = mean(mean_dive_duration),
+            .groups = "drop")
 
 
 data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+       y = "Average number of benthic dives per seal per hour")
+```
+
+### Model
+
+```{r fig-fit-data-100}
+#| fig-cap: Result from `descdist` function to determine the best distribution to use for data modelling
+
+# determine what distribution would best describe our data
+descdist(data_plot$nb_average_benthic_dive, discrete = FALSE)
+```
+
+Based on @fig-fit-data-100, it seems that a `gamma` distribution would be the best to model this dataset.
+
+```{r}
+# model
+mdl_100 = glmer(nb_average_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                 (1|id), 
+                family = Gamma,
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               levels=c("night",
+                                                                      "day"))))
+# summary
+broom.mixed::tidy(mdl_100) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
+```
+
+### Go Further...
+
+```{r}
+data_plot = data_dive %>%
+  # get rid of data without location information
+  filter(!is.na(Lat)) %>%
+  # keep all benthic dives
+  filter(DiveTypeName_100 == "Benthic") %>%
+  # I'm not so sure about this part..
+  mutate(period_duration = if_else(
+    day_night == "night",
+    getNightLength(date, Lat, Long),
+    24 - getNightLength(date, Lat, Long)
+  )) %>%
+  group_by(id, day_night) %>%
+  summarise(
+    nb_benthic_dive = n(),
+    mean_dive_duration = mean(Dduration),
+    mean_period_duration = mean(period_duration),
+    .groups = "drop"
+  )
+```
+
+For more information: [https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion](https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion)
+
+```{r}
+# model
+mdl_100_extra = glmer(nb_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                  scale(mean_period_duration) +
+                 (1|id), 
+                family = "poisson",
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               # ordered = T,
+                                                               levels=c("day",
+                                                                      "night"))))
+# summary
+broom.mixed::tidy(mdl_50_extra) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
 ```
 
 ```{r}
-# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
-broom::tidy(wilcox.test(
-  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
-  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
-)) %>%
-  gt() %>%
-  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
+qqnorm(residuals(mdl_100_extra))
+qqline(residuals(mdl_100_extra))
 ```
+
 ## diff<150
+
+### Graph
 
 ```{r fig-boxplot-150}
 #| fig-cap: "Boxplot of the number of (diff<150) benthic dives per hour and individual accross day-time and night-time"
@@ -1014,32 +1301,109 @@ data_plot <- data_dive %>%
   filter(!is.na(Lat)) %>%
   # keep all benthic dives
   filter(DiveTypeName_150 == "Benthic") %>%
-  mutate(hour = lubridate::hour(date),
-         day = as.Date(date)) %>%
+  mutate(
+    hour = lubridate::hour(date),
+    day = as.Date(date)
+  ) %>%
   group_by(id, day, hour, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  summarise(
+    nb_benthic_dive = n(),
+    mean_dive_duration = mean(Dduration),
+    .groups = "drop"
+  ) %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+  summarise(
+    nb_average_benthic_dive = mean(nb_benthic_dive),
+    mean_dive_duration = mean(mean_dive_duration),
+    .groups = "drop"
+  )
 
 
-data_plot %>% 
+data_plot %>%
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
-  labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+  labs(
+    x = "Time of the day",
+    y = "Average number of benthic dives per seal per hour"
+  )
+```
+
+### Model
+
+```{r fig-fit-data-150}
+#| fig-cap: Result from `descdist` function to determine the best distribution to use for data modelling
+
+# determine what distribution would best describe our data
+descdist(data_plot$nb_average_benthic_dive, discrete = FALSE)
+```
+
+Based on @fig-fit-data-150, it seems that a `gamma` distribution would be the best to model this dataset.
+
+```{r}
+# model
+mdl_150 = glmer(nb_average_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                 (1|id), 
+                family = Gamma,
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               levels=c("night",
+                                                                      "day"))))
+# summary
+broom.mixed::tidy(mdl_150) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
+```
+
+### Go Further...
+
+```{r}
+data_plot = data_dive %>%
+  # get rid of data without location information
+  filter(!is.na(Lat)) %>%
+  # keep all benthic dives
+  filter(DiveTypeName_150 == "Benthic") %>%
+  # I'm not so sure about this part..
+  mutate(period_duration = if_else(
+    day_night == "night",
+    getNightLength(date, Lat, Long),
+    24 - getNightLength(date, Lat, Long)
+  )) %>%
+  group_by(id, day_night) %>%
+  summarise(
+    nb_benthic_dive = n(),
+    mean_dive_duration = mean(Dduration),
+    mean_period_duration = mean(period_duration),
+    .groups = "drop"
+  )
+```
+
+For more information: [https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion](https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion)
+
+```{r}
+# model
+mdl_150_extra = glmer(nb_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                  scale(mean_period_duration) +
+                 (1|id), 
+                family = "poisson",
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               # ordered = T,
+                                                               levels=c("day",
+                                                                      "night"))))
+# summary
+broom.mixed::tidy(mdl_150_extra) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
 ```
 
 ```{r}
-# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
-broom::tidy(wilcox.test(
-  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
-  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
-)) %>%
-  gt() %>%
-  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
+qqnorm(residuals(mdl_150_extra))
+qqline(residuals(mdl_150_extra))
 ```
 
 ## diff<200
+
+### Graph
 
 ```{r fig-boxplot-200}
 #| fig-cap: "Boxplot of the number of (diff<200) benthic dives per hour and individual accross day-time and night-time"
@@ -1051,31 +1415,97 @@ data_plot <- data_dive %>%
   filter(DiveTypeName_200 == "Benthic") %>%
   mutate(hour = lubridate::hour(date),
          day = as.Date(date)) %>%
-  group_by(id, day, hour, day_night) %>%
-  summarise(nb_benthic_dive = n(), .groups = "drop") %>%
+  group_by(id, day, hour, day_night)  %>%
+  summarise(nb_benthic_dive = n(), 
+            mean_dive_duration = mean(Dduration),
+            .groups = "drop") %>%
   group_by(id, day_night) %>%
-  summarise(nb_average_benthic_dive = mean(nb_benthic_dive), .groups = "drop")
+  summarise(nb_average_benthic_dive = mean(nb_benthic_dive),
+            mean_dive_duration = mean(mean_dive_duration),
+            .groups = "drop")
 
 
 data_plot %>% 
   ggplot(aes(x = day_night, y = nb_average_benthic_dive)) +
   geom_boxplot(outlier.shape = NA) +
   labs(x = "Time of the day", 
-       y = "Average number of dives per individual per hour")
+       y = "Average number of benthic dives per seal per hour")
+```
+
+### Model
+
+```{r fig-fit-data-200}
+#| fig-cap: Result from `descdist` function to determine the best distribution to use for data modelling
+
+# determine what distribution would best describe our data
+descdist(data_plot$nb_average_benthic_dive, discrete = FALSE)
+```
+
+Based on @fig-fit-data-200, it seems that a `gamma` distribution would be the best to model this dataset.
+
+```{r}
+# model
+mdl_200 = glmer(nb_average_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                 (1|id), 
+                family = Gamma,
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               levels=c("night",
+                                                                      "day"))))
+# summary
+broom.mixed::tidy(mdl_200) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
+```
+
+### Go Further...
+
+```{r}
+data_plot = data_dive %>%
+  # get rid of data without location information
+  filter(!is.na(Lat)) %>%
+  # keep all benthic dives
+  filter(DiveTypeName_200 == "Benthic") %>%
+  # I'm not so sure about this part..
+  mutate(period_duration = if_else(
+    day_night == "night",
+    getNightLength(date, Lat, Long),
+    24 - getNightLength(date, Lat, Long)
+  )) %>%
+  group_by(id, day_night) %>%
+  summarise(
+    nb_benthic_dive = n(),
+    mean_dive_duration = mean(Dduration),
+    mean_period_duration = mean(period_duration),
+    .groups = "drop"
+  )
+```
+
+For more information: [https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion](https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#overdispersion)
+
+```{r}
+# model
+mdl_200_extra = glmer(nb_benthic_dive ~ day_night +
+                 scale(mean_dive_duration) +
+                  scale(mean_period_duration) +
+                 (1|id), 
+                family = "poisson",
+                data = data_plot %>% mutate(day_night = factor(day_night,
+                                                               # ordered = T,
+                                                               levels=c("day",
+                                                                      "night"))))
+# summary
+broom.mixed::tidy(mdl_200_extra) %>% 
+  gt() %>%
+  tab_header(title = "GLMM")
 ```
 
 ```{r}
-# Mann Whitney / Wilcoxon rank sum test on benthic dive rate
-broom::tidy(wilcox.test(
-  data_plot %>% filter(day_night == "day") %>% pull(nb_average_benthic_dive),
-  data_plot %>% filter(day_night == "night") %>% pull(nb_average_benthic_dive)
-)) %>%
-  gt() %>%
-  tab_header(title = "Mann Whitney / Wilcoxon rank sum test on benthic dives rate")
+qqnorm(residuals(mdl_200_extra))
+qqline(residuals(mdl_200_extra))
 ```
 
 :::
-
 
 # Boxplot of the number of benthic dive (day vs. night)
 
@@ -1252,3 +1682,54 @@ broom::tidy(glm(
 ```
 
 :::
+
+
+# Extra
+
+Let's look at the distribution of the dive duration to decide a threshold.
+
+```{r}
+data_dive %>% 
+  ggplot(aes(x = Dduration)) +
+  geom_histogram(fill = "grey80",
+                 color = "black") +
+  geom_vline(xintercept = 23*60, linetype="dashed", col = "lightgreen") +
+  geom_vline(xintercept = 4000, linetype="dashed", col = "salmon") +
+  labs(y = "# of dives", x = "Dive duration (s)") +
+  theme_minimal() +
+  theme(axis.line = element_line(arrow = arrow(type = "closed", length = unit(0.1, "inches"))))
+```
+
+Ok, so let's pick 2500 sec and look on a map where this dives are.
+
+```{r}
+# define palette
+data_inter = data_dive %>%
+  filter(!is.na(Lat) &
+           Dduration > 4000) %>%
+  arrange(id, date) %>% 
+  mutate(date_post = date + Dduration,
+         diff_time = as.numeric(c(difftime(tail(date, -1), 
+                                           head(date_post, -1)),0), 
+                                units = "mins"))
+
+colPal <- scales::col_numeric(palette = "RdYlGn",
+                        domain = c(0, max(data_inter$diff_time)))
+trip +
+  # new scale
+  new_scale_fill() +
+  # kernel
+  ggspatial::geom_spatial_point(
+        data = data_inter,
+        aes(x = Long, y = Lat),
+        crs = 4326,
+        col = colPal(data_inter$diff_time),
+        size = 1
+      ) +
+  # no display alpha
+  guides() +
+  # title
+  labs(title = "Dives longer than 4000 seconds",
+       subtitle = paste0(nrow(data_inter), " dives"))
+```
+
