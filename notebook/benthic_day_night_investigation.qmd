@@ -1,0 +1,548 @@
+---
+title: "Benthic Day Night Investigations"
+author:
+  - name: "Astarte Brown"
+  - name: "Conner Hale"
+  - name: "Joffrey Joumaa"
+date: "`r invisible(Sys.setlocale(locale = 'C')); format(Sys.Date(), format = '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-location: left
+    number-sections: true
+    smooth-scroll: true
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    fig-align: "center"
+    highlight-style: arrow
+    self-contained: true
+execute: 
+  echo: true
+  cache: false
+  warning: false
+theme:
+  light: flatly
+  dark: darkly
+knitr:
+  opts_chunk:
+    message: false
+    rownames.print: false
+    tidy: styler
+---
+
+# Import library
+
+```{r}
+# data viz
+library(ggplot2)
+# library(ggh4x)
+# library(ggOceanMaps)
+# library(patchwork)
+# library(viridis)
+# library(ggpubr)
+# library(grid)
+# library(viridis)
+# library(ggnewscale)
+
+# table
+# library(gt)
+
+# map
+# library(ggmap)
+# library(ggsn)
+# library(sf)
+# library(sp)
+# library(smoothr)
+
+# kernel density
+# library(eks)
+# library(ggdensity)
+
+# stat
+# library(Hmisc)
+# library(circular)
+# library(CircStats)
+
+# char
+# library(stringr)
+
+# solar angle
+library(suncalc)
+
+# data wrangling
+# library(tidyr)
+library(dplyr)
+library(data.table)
+# library(purrr)
+# library(forcats)
+# library(lubridate)
+```
+
+# Import data
+
+Let's load `data_dive`, *i.e.* the output of `data_wrangling.qmd`, and filter only on animals leaving from Ano Nuevo.
+
+```{r}
+# import the data
+data_dive <- readRDS("../export/data_dive.rds")
+
+# filter on seals departing from ANNU
+data_dive <- data_dive %>%
+  filter(DepartureLocation == "ANNU")
+```
+
+```{r}
+# new definition of benthic dives
+data_dive <- data_dive %>% 
+  mutate(
+    # change divetype
+    DiveType = data.table::fifelse(DiveType == 3 &
+                                     (abs(bathy) - Maxdepth) > 100, 0, DiveType),
+    DiveTypeName = data.table::fifelse(
+      DiveTypeName == "Benthic" &
+        (abs(bathy) - Maxdepth) > 100,
+      "Transit",
+      DiveTypeName
+    ))
+```
+
+Then we need for each day to calculate the sunlight information using the function `getSunlightTimes`. The only issue with this function is that for one day (*e.g* `2000-01-01`), the time of sunset can sometimes be estimated for the following day (`2000-01-02`), which mess up with the calculation of night time. To deal with it, we calculated the sunrise and sunset time of the current day, but also the day before and after, and then accurately calculate the day time and night time.
+
+```{r}
+# get sunlight info for date t
+dt_inter_today = getSunlightTimes(
+  data = data_dive %>%
+    mutate(date = as.Date(date)) %>%
+    select(date,
+           lat = Lat,
+           lon = Long),
+  keep = c(
+    "sunset",
+    "sunsetStart",
+    "sunrise",
+    "sunriseEnd",
+    "night",
+    "nightEnd"
+  )
+)
+
+# get sunlight info for date t+1
+dt_inter_tomorrow = getSunlightTimes(
+  data = data_dive %>%
+    mutate(date = as.Date(date) +
+             1) %>%
+    select(date,
+           lat = Lat,
+           lon = Long),
+  keep = c(
+    "sunset",
+    "sunsetStart",
+    "sunrise",
+    "sunriseEnd",
+    "night",
+    "nightEnd"
+  )
+)
+
+# rename columns
+colnames(dt_inter_tomorrow) = paste0(colnames(dt_inter_tomorrow), "_tomorrow")
+
+# get sunlight info for date t-1
+dt_inter_yesterday = getSunlightTimes(
+  data = data_dive %>%
+    mutate(date = as.Date(date) -
+             1) %>%
+    select(date,
+           lat = Lat,
+           lon = Long),
+  keep = c(
+    "sunset",
+    "sunsetStart",
+    "sunrise",
+    "sunriseEnd",
+    "night",
+    "nightEnd"
+  )
+)
+
+# rename columns
+colnames(dt_inter_yesterday) = paste0(colnames(dt_inter_yesterday), "_yesterday")
+
+# rbind this information to data_dive
+data_dive = merge(
+  data_dive %>% mutate(just_date = as.Date(date)) %>% setDT(.),
+  cbind(dt_inter_today,
+        dt_inter_tomorrow[, 4:9],
+        dt_inter_yesterday[, 4:9]) %>% distinct() %>% setDT(.),
+  by.x = c("just_date", "Lat", "Long"),
+  by.y = c("date", "lat", "lon"),
+  all.x = T
+)
+
+# then estimate the period (day or night) and duration associated with
+data_dive <-
+  data_dive %>%
+  # import to order the dive by id
+  arrange(id, DiveNumber) %>%
+  mutate(
+    # based on sunset and sunrise
+    period_1 =
+      if_else((((date > sunrise_yesterday) &
+        (date < sunset_yesterday)
+      ) |
+        ((date > sunrise) & (date < sunset)
+        ) |
+        ((date > sunrise_tomorrow) &
+          (date < sunset_tomorrow)
+        )),
+      "day",
+      "night"
+      ),
+    # based on night and nightEnd
+    period_2 =
+      if_else((((date > nightEnd_yesterday) &
+        (date < night_yesterday)
+      ) |
+        ((date > nightEnd) & (date < night)
+        ) |
+        ((date > nightEnd_tomorrow) &
+          (date < night_tomorrow)
+        )),
+      "day",
+      "night"
+      )
+  ) %>%
+  # identification of day night in a vectorize way
+  .[, `:=`(
+    yesterday_day_2 = date %between% list(nightEnd_yesterday, night_yesterday),
+    yesterday_night_2 = date %between% list(night_yesterday, nightEnd),
+    today_day_2 = date %between% list(nightEnd, night),
+    today_night_2 = date %between% list(night, nightEnd_tomorrow),
+    tomorrow_day_2 = date %between% list(nightEnd_tomorrow, night_tomorrow)
+  )] %>%
+  .[, `:=`(
+    yesterday_day = date %between% list(sunrise_yesterday, sunset_yesterday),
+    yesterday_night = date %between% list(sunset_yesterday, sunrise),
+    today_day = date %between% list(sunrise, sunset),
+    today_night = date %between% list(sunset, sunrise_tomorrow),
+    tomorrow_day = date %between% list(sunrise_tomorrow, sunset_tomorrow)
+  )] %>%
+  # duration of each period
+  .[, period_length_2 := fifelse(
+    yesterday_day_2,
+    as.numeric(abs(difftime(nightEnd_yesterday,
+      night_yesterday,
+      units = "hours"
+    ))),
+    fifelse(
+      yesterday_night_2,
+      as.numeric(abs(difftime(night_yesterday,
+        nightEnd,
+        units = "hours"
+      ))),
+      fifelse(
+        today_day_2,
+        as.numeric(abs(difftime(nightEnd,
+          night,
+          units = "hours"
+        ))),
+        fifelse(
+          today_night_2,
+          as.numeric(abs(difftime(night,
+            night_tomorrow,
+            units = "hours"
+          ))),
+          as.numeric(abs(difftime(night_tomorrow,
+            nightEnd_tomorrow,
+            units = "hours"
+          )))
+        )
+      )
+    )
+  )] %>%
+  .[, period_length_1 := fifelse(
+    yesterday_day,
+    as.numeric(abs(difftime(sunrise_yesterday,
+      sunset_yesterday,
+      units = "hours"
+    ))),
+    fifelse(
+      yesterday_night,
+      as.numeric(abs(difftime(sunset_yesterday,
+        sunrise,
+        units = "hours"
+      ))),
+      fifelse(
+        today_day,
+        as.numeric(abs(difftime(sunrise,
+          sunset,
+          units = "hours"
+        ))),
+        fifelse(
+          today_night,
+          as.numeric(abs(difftime(sunset,
+            sunset_tomorrow,
+            units = "hours"
+          ))),
+          as.numeric(abs(difftime(sunset_tomorrow,
+            sunrise_tomorrow,
+            units = "hours"
+          )))
+        )
+      )
+    )
+  )] %>%
+  # remove unnecessary columns
+  select(
+    -c(starts_with(c("yesterday_", "today_", "tomorrow_")))
+  )
+```
+
+That code above should be optimized, ideally with a function... Anyway, we have two measurements of day time and night time:
+
+-   **period_1** based on:
+    -   *sunrise*: sunrise (top edge of the sun appears on the horizon)
+    -   *sunset*: sunset (sun disappears below the horizon, evening civil twilight starts)
+-   **period_2** based on:
+    -   *nightEnd*: sunrise ends (bottom edge of the sun touches the horizon)
+    -   *night*: night starts (dark enough for astronomical observations)
+
+::: {.callout-tip title="But we can decide otherwise!"}
+<https://www.rdocumentation.org/packages/suncalc/versions/0.5.0/topics/getSunlightTimes>
+:::
+
+# Data Visualization
+
+|                                         | Day  | Night  |
+|-----------------------------------------|------|--------|
+| Duration                                | 10   | 14     |
+| Benthic Dive Time                       | 3    | 4      |
+| Proportion of time spent benthic diving | 30 % | 28.5 % |
+| Index                                   | 1.03 | 0.98   |
+
+: Just a theoretical situation to explain how we estimated both the index and the proportion of time spent benthic diving {#tbl-example}
+
+In this situation, this animal spent more absolute time doing benthic dive at night (4 hours *vs.* 3 hours), but if we take into account that night lasted longer than day (14 hours *vs* 10 hours), we can calculate two parameters:
+
+-   the proportion of time spent benthic diving: his is simply, for each period (day or night), the time spent benthic diving divided by the length of the period.
+-   an index: which reflects how much time the animal spent benthic diving during one period compared to the other period.
+
+> Taking into account the difference in duration between day and night, these two parameters reveal that this animal spent more of his time doing benthic dives during the day than at night.
+
+::: callout-important
+## Index Definition
+
+$$
+Index = \frac{\left( \frac{T_{benthic\_period\_considered}}{T_{benthic\_period\_considered} +T_{benthic\_other\_period}} \right)}{\left( \frac{T_{length\_period\_considered}}{24} \right)}
+$$
+
+-   $\left( \frac{T_{benthic\_period\_considered}}{T_{benthic\_period\_considered} +T_{benthic\_other\_period}} \right)$: represents the proportion of time spent benthic diving during a measured period (`night` or `day`). For instance if a seal spent 2 hours doing benthic dives at night over 8 hours of benthic dives in total (2 hours at night + 6 hours at day), we would estimate that 25 % (*i.e.* 2/8) of its time spent doing benthic dives was at night.
+
+-   $\left( \frac{T_{length\_period\_considered}}{24} \right)$: represents the proportion time of the measured period over 24 hours. For instance if the measured period is of 10 hours for the night, then we would estimate this period to represent 41.6 % (*i.e.* 10/24) of a 24h day.
+:::
+
+::: callout-tip
+## If Index \> 1
+
+it means that during the measured period, whether it is day or night, the animal spents more time engaged in benthic diving compared to other periods.
+:::
+
+## Proportion of time benthic diving
+
+```{r}
+data_plot <- data_dive %>% 
+  # pivot to get the data in a format easiliy "plottable"
+  tidyr::pivot_longer(
+  cols = c("period_1", "period_2"),
+  names_to = "method",
+  names_prefix = "period_",
+  values_to = "period"
+) %>% 
+  # deal with period_length duplicate because of the pivot longer
+  mutate(
+    period_length = if_else(method == 1, period_length_1, period_length_2)
+  ) %>% 
+  # remove unwanted columns
+  select(-c(period_length_1, period_length_2)) %>% 
+  # get rid of data without location information
+  filter(!is.na(Lat)) %>%
+  # keep all benthic dives
+  filter(DiveTypeName == "Benthic") %>%
+  # calculate a day variable (xxxx-xx-xx)
+  mutate(day = as.Date(date)) %>%
+  # remove period == NA, somehow getSunlightTimes doesn't find Night time
+  filter(!is.na(period)) %>% 
+  # remove day not having period == c("day", "night")
+  group_by(id, day, method) %>% 
+  filter(n_distinct(period) == 2) %>%
+  ungroup() %>% 
+  # then by id, day and period
+  group_by(id, day, period, method)  %>%
+  # calculate 
+  summarise(
+    # the time in hours spent benthic diving
+    daily_benthic_dives_duration_h = (sum(Dduration)/60)/60,
+    # the average duration of the day and night
+    period_length = mean(period_length),
+    .groups = "drop") %>% 
+  # then by id and period
+  group_by(id, period, method) %>%
+  # calculate
+  summarise(
+    # the total amount of time benthic diving
+    daily_benthic_dives_duration_h_sum = sum(daily_benthic_dives_duration_h),
+    # the total amount of time for each period (day time and night time)
+    period_length_sum = sum(period_length),
+    # proportion of benthic dive trough available time
+    proportion_benthic_through_available_time = daily_benthic_dives_duration_h_sum/period_length_sum,
+    .groups = "drop"
+  )
+```
+
+```{r fig-prop}
+#| fig-cap: Proportion of time benthic diving for each animal byt day and night using two different methods to separate these two periods. Animals are ranked by the average proportion, day and night combined.
+#| 
+# order the way we want
+order_id <- data_plot %>%
+  group_by(id) %>%
+  summarise(n = mean(proportion_benthic_through_available_time)) %>%
+  arrange(n) %>%
+  pull(id)
+
+# plot
+ggplot(
+  data_plot %>%
+    mutate(
+      id = factor(id,
+        levels = order_id
+      ),
+      proportion_benthic_through_available_time = if_else(
+        period == "day", 
+        -proportion_benthic_through_available_time,
+        proportion_benthic_through_available_time
+      )
+    ),
+  aes(
+    y = as.factor(id),
+    x = proportion_benthic_through_available_time,
+    fill = period
+  )
+) +
+  geom_bar(stat = "identity", show.legend = F) +
+  facet_grid(method ~ period, 
+             scales = "free_x",
+             labeller = labeller(method = function(x) paste("Method", x))) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  ) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(
+    x = "Proportion of Benthic Dive Time per Seal",
+    y = "Seals"
+  )
+```
+
+Since the @fig-prop is not easy to read I thought it would be easier to look at the distribution of these proportions of time benthic diving.
+
+```{r fig-propo-distribution}
+#| fig-cap: Distribution of the proportion of time benthic diving by and day and night using two different methods to separate these two periods.
+ggplot(data_plot %>% 
+         mutate(id = factor(id,levels = order_id)), 
+       aes(
+         x=proportion_benthic_through_available_time,
+         fill = period
+       )
+)+
+  geom_histogram(show.legend = FALSE)+
+  scale_x_continuous(labels = scales::percent,
+                     name = "Proportion of Benthic Dive Time per Seal")+
+  facet_grid(period ~ method, 
+             scales = "free_x",
+             labeller = labeller(method = function(x) paste("Method", x))) +
+  theme_light()
+```
+
+During the day, this distribution (no matter what the method is) seems to be skewed toward lower proportion of time benthic diving than during the night, suggesting they spend relatively more time doing benthic dives during the night.
+
+## Index
+
+```{r}
+data_plot <- data_dive %>%
+  # pivot to get the data in a format easiliy "plottable"
+  tidyr::pivot_longer(
+    cols = c("period_1", "period_2"),
+    names_to = "method",
+    names_prefix = "period_",
+    values_to = "period"
+  ) %>%
+  # deal with period_length duplicate because of the pivot longer
+  mutate(period_length = if_else(method == 1, 
+                                 period_length_1, 
+                                 period_length_2)) %>%
+  # remove unwanted columns
+  select(-c(period_length_1, period_length_2)) %>%
+  # get rid of data without location information
+  filter(!is.na(Lat)) %>%
+  # keep all benthic dives
+  filter(DiveTypeName == "Benthic") %>%
+  # calculate a day variable (xxxx-xx-xx)
+  mutate(day = as.Date(date)) %>%
+  # remove period == NA, somehow getSunlightTimes doesn't find Night time
+  filter(!is.na(period)) %>%
+  # remove day not having period == c("day", "night")
+  group_by(id, day, method) %>%
+  filter(n_distinct(period) == 2) %>%
+  # by id, day, period and method
+  group_by(id, day, period, method) %>%
+  summarise(
+    daily_benthic_dives_duration_h = (sum(Dduration) / 60) / 60,
+    period_length = median(period_length),
+    .groups = "drop"
+  ) %>%
+  # then by id, day and method
+  group_by(id, day, method)  %>%
+  mutate(index = (daily_benthic_dives_duration_h / (sum(
+    daily_benthic_dives_duration_h
+  ))) / (period_length / 24)) %>% 
+  ungroup()
+```
+
+```{r fig-index}
+#| fig-cap: Range of variation (in grey) of the index for each animal (in row) according to the day and night, identified either using the sunset and sunrise (method 1) or using the columns night and nightEnd (method 2). Each point represents the median and the vertical blue lines indicate when this index is equal to 1. When above 1, it means the animal spent relatively more time benthic diving during the considered period.
+#| 
+# Index
+order_id = data_plot %>% 
+  # filter(method == 1) %>%
+  filter(period == "day") %>%
+  group_by(id) %>% 
+  summarise(n = quantile(index, 0.5, na.rm = T)) %>% 
+  arrange(n) %>% 
+  pull(id)
+
+# plot
+ggplot(data_plot %>% 
+         mutate(id = factor(id,
+                            levels = order_id)) %>% 
+         group_by(id, period, method) %>% 
+         summarise(
+           median_point = quantile(index, 0.5, na.rm = T),
+           lower_line = quantile(index, 0.25, na.rm = T),
+           upper_line = quantile(index, 0.75, na.rm = T),
+           .groups = "drop"
+         ),
+       aes(x = median_point, 
+           y = as.factor(id))) +
+  geom_linerange(aes(xmin = lower_line, xmax = upper_line), alpha = 0.2) +
+  geom_point(size = 0.5)+
+  geom_vline(xintercept = 1, col = "blue") +
+  facet_grid(method~period, 
+             scales = "free_x",
+             labeller = labeller(method = function(x) paste("Method", x))) + 
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y=element_blank()) +
+  labs(y = "Seals", x = "Index")
+```
+
+From this graph, I would say that they tend to spent more time doing benthic dives during the night than during the day 🤷
