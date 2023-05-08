@@ -8,7 +8,7 @@ Just go to:
 
 * https://sesjo.github.io/seal_predator_avoidance_strategy/figures.html.
 * https://sesjo.github.io/seal_predator_avoidance_strategy/benthic_investigation.html.
-# * https://sesjo.github.io/seal_predator_avoidance_strategy/benthic_day_night_investigation.html.
+* https://sesjo.github.io/seal_predator_avoidance_strategy/benthic_day_night_investigation.html.
 
 ## Roadmap
 
