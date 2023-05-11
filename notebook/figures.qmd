@@ -121,7 +121,7 @@ windrose <-
     # generate pretty lables
     dir.labels <- as.character(c(seq(0, 360 - deg, by = deg), 0))
     
-    # replace ranges with pretty bin lables
+    # replace ranges with pretty bin labels
     levels(dir.binned) <- dir.labels
     
     # Assign bin names to the original data set
@@ -155,7 +155,7 @@ windrose <-
       ) + # 24 vertical lines at center of the 30? ranges.
       geom_hline(
         yintercept = maxvalue,
-        colour = "white",
+        colour = "black",
         linewidth = .5
       ) + # Darker horizontal line as the top border (max).
       # On top of everything we place the histogram bars.
@@ -225,9 +225,20 @@ data_dive = merge(data_dive,
              by = c("id", "DiveNumber"), 
              all.x = T)
 
-# add day-night
+# change few things
 data_dive <- data_dive %>% 
-  mutate(day_night = if_else(solar_angle < -18, "night", "day"))
+  mutate(
+    # add day-night
+    day_night = if_else(solar_angle < -18, "night", "day"),
+    # change divetype
+    DiveType = data.table::fifelse(DiveType == 3 &
+                                     (abs(bathy) - Maxdepth) > 100, 0, DiveType),
+    DiveTypeName = data.table::fifelse(
+      DiveTypeName == "Benthic" &
+        (abs(bathy) - Maxdepth) > 100,
+      "Transit",
+      DiveTypeName
+    ))
 ```
 
 # Data Visualisation
@@ -238,24 +249,38 @@ data_dive <- data_dive %>%
 # shark and orca area = NA if no location data
 data_dive <- data_dive %>% 
   mutate(shark_area = if_else(is.na(Lat), NA, shark_area),
-         orca_area = if_else(is.na(Lat), NA, orca_area))
+         orca_area = if_else(is.na(Lat), NA, orca_area)) %>% 
+  # add year of deployment
+  group_by(id) %>%
+  mutate(year = first(format(date, format = "%Y")),
+         shark_and_orca = if_else(is.na(Lat), 
+                                  NA, 
+                                  if_else(shark_area + orca_area == 2, 1, 0)),
+         shark_or_orca = if_else(is.na(Lat), 
+                                 NA, 
+                                 if_else(shark_area + orca_area >= 1, 1, 0)))
 
 # build table 
 data_dive %>%
-  # careful, needs to be changed as we remove some individuals we should keep
-  # filter(!is.na(Lat)) %>% 
-  group_by(id) %>%
-  mutate(deployment = first(format(date, format = "%Y"))) %>%
-  group_by(year = deployment, id) %>%
+  group_by(year, id) %>%
   summarise(
     n_dives_ind_all = length(DiveNumber),
     n_dives_ind_w_loc = length(DiveNumber[!is.na(Lat)]),
     n_dives_ind_wo_loc = length(DiveNumber[is.na(Lat)]),
-    n_benthic_dives_ind = length(DiveNumber[DiveTypeName == "Benthic"]),
+    n_benthic_dives_all = length(DiveNumber[DiveTypeName == "Benthic"]),
+    n_benthic_dives_w_loc = length(DiveNumber[DiveTypeName == "Benthic" & !is.na(Lat)]),
     n_benthic_dives_ind_in_shark = length(DiveNumber[DiveTypeName == "Benthic" &
-                                                       shark_area == 1]),
+                                                       shark_area == 1 & 
+                                                       !is.na(Lat)]),
     n_benthic_dives_ind_in_orca = length(DiveNumber[DiveTypeName == "Benthic" &
-                                                      orca_area == 1]),
+                                                      orca_area == 1 & 
+                                                      !is.na(Lat)]),
+    n_benthic_dives_ind_shark_and_orca = length(DiveNumber[DiveTypeName == "Benthic" &
+                                                             shark_and_orca == 1 &
+                                                             !is.na(Lat)]),
+    n_benthic_dives_ind_shark_or_orca = length(DiveNumber[DiveTypeName == "Benthic" &
+                                                            shark_or_orca == 1 & 
+                                                            !is.na(Lat)]),
     hour_day_departure = first(as.numeric(format(date_tz[DiveTypeName == "Benthic"], 
                                                  format = "%H"))),
     hour_day_arrival = last(as.numeric(format(date_tz[DiveTypeName == "Benthic"], 
@@ -268,16 +293,18 @@ data_dive %>%
     n_dives_all = sum(n_dives_ind_all),
     n_dives_w_loc = sum(n_dives_ind_w_loc),
     n_dives_wo_loc = sum(n_dives_ind_wo_loc),
-    n_benthic_dives = sum(n_benthic_dives_ind),
+    n_benthic_dives = sum(n_benthic_dives_all),
     n_benthic_dives_proportion = sum(n_benthic_dives)/sum(n_dives_all),
-    n_benthic_dives_in_shark_proportion = sum(n_benthic_dives_ind_in_shark)/sum(n_benthic_dives),
-    n_benthic_dives_in_orca_proportion = sum(n_benthic_dives_ind_in_orca)/sum(n_benthic_dives),
+    n_benthic_dives_in_shark_proportion = sum(n_benthic_dives_ind_in_shark)/sum(n_benthic_dives_w_loc),
+    n_benthic_dives_in_orca_proportion = sum(n_benthic_dives_ind_in_orca)/sum(n_benthic_dives_w_loc),
+    n_benthic_dives_in_shark_and_orca = sum(n_benthic_dives_ind_shark_and_orca)/sum(n_benthic_dives_w_loc),
+    n_benthic_dives_in_shark_or_orca = sum(n_benthic_dives_ind_shark_or_orca)/sum(n_benthic_dives_w_loc),
     n_dives_mean = mean(n_dives_ind_all),
     n_dives_plus_minus = "±",
     n_dives_sd = sd(n_dives_ind_all),
-    n_benthic_dives_mean = mean(n_benthic_dives_ind),
+    n_benthic_dives_mean = mean(n_benthic_dives_all),
     n_benthic_dives_plus_minus = "±",
-    n_benthic_dives_sd = sd(n_benthic_dives_ind),
+    n_benthic_dives_sd = sd(n_benthic_dives_all),
     hour_day_departure_mean = psych::circadian.mean(hour_day_departure),
     hour_day_departure_plus_minus = "±",
     hour_day_departure_sd = psych::circadian.sd(hour_day_departure)$sd,
@@ -300,7 +327,9 @@ data_dive %>%
   tab_spanner(
     label = "% benthic dives",
     columns = c("n_benthic_dives_in_shark_proportion",
-                "n_benthic_dives_in_orca_proportion")
+                "n_benthic_dives_in_orca_proportion",
+                "n_benthic_dives_in_shark_or_orca",
+                "n_benthic_dives_in_shark_and_orca")
   ) %>% 
   tab_spanner(
     label = "# dives",
@@ -353,6 +382,8 @@ data_dive %>%
     n_benthic_dives_proportion = "Proportion",
     n_benthic_dives_in_shark_proportion = "Shark area",
     n_benthic_dives_in_orca_proportion = "Orca area",
+    n_benthic_dives_in_shark_or_orca = "Total",
+    n_benthic_dives_in_shark_and_orca = "Overlap",
     n_dives_mean = md("Mean"),
     n_dives_plus_minus = md("±"),
     n_dives_sd = md("SD"),
@@ -369,7 +400,9 @@ data_dive %>%
   fmt_percent(
     columns = c("n_benthic_dives_in_shark_proportion",
                "n_benthic_dives_in_orca_proportion",
-               "n_benthic_dives_proportion"),
+               "n_benthic_dives_proportion",
+                "n_benthic_dives_in_shark_or_orca",
+                "n_benthic_dives_in_shark_and_orca"),
     decimal = 1
   ) %>% 
     fmt_number(
@@ -401,7 +434,8 @@ data_dive %>%
     align = "left"
   ) %>% 
   # color rows
-  opt_row_striping()
+  opt_row_striping() %>% 
+  tab_options(table.width = pct(150))
 ```
 
 :::{.callout-caution}
@@ -410,6 +444,18 @@ data_dive %>%
 * Wording
 * Adding/removing info
 :::
+
+## Figure 0
+
+```{r}
+#| eval: false
+data_dive %>% 
+  filter(
+    id == 2004021 &
+      DiveTypeName == "Drift" & 
+      lead(DiveTypeName, 1) == "Transit" &
+      lead(DiveTypeName, 2) ==  "Forage") 
+```
 
 ## Figure 1
 
@@ -433,19 +479,27 @@ data_windrose <- data_dive %>%
 ```
 
 ```{r}
+hour_time_2_radian <- function(x, high = 24, low = 0){
+  # https://pingouin-stats.org/build/html/generated/pingouin.convert_angles.html#pingouin.convert_angles
+  ptp = high - low
+  rad = x * (2 * pi)/ptp
+  rad = (rad + pi) %% (2 * pi) - pi
+  return(rad)
+}
+```
+
+
+```{r}
 # departure
-test_departure = r.test(conversion.circular(
-  circular(
-    data_windrose %>%
+test_departure = CircStats::r.test(
+  data_windrose %>%
       group_by(id) %>%
       filter(DiveNumber == 1) %>%
       mutate(time = hour(date_tz) + 
                minute(date_tz)/60 + 
-               second(date_tz)/(60*60)) %>% pull(time),
-    units = "hours"
-  ),
-  units = "radians"
-))
+               second(date_tz)/(60*60)) %>% 
+    pull(time) %>% 
+    hour_time_2_radian(.))
 
 # arrival
 test_arrival = r.test(conversion.circular(
@@ -461,20 +515,20 @@ test_arrival = r.test(conversion.circular(
   units = "radians"
 ))
 
-# benthic
-test_benthic = r.test(conversion.circular(
-  circular(
-    data_windrose %>%
-      group_by(id) %>%
-      filter(DiveTypeName == "Benthic") %>%
-      mutate(time = hour(date_tz) + 
-               minute(date_tz)/60 + 
-               second(date_tz)/(60*60)) %>% 
-      pull(time),
-    units = "hours"
-  ),
-  units = "radians"
-))
+# # benthic
+# test_benthic = r.test(conversion.circular(
+#   circular(
+#     data_windrose %>%
+#       group_by(id) %>%
+#       filter(DiveTypeName == "Benthic") %>%
+#       mutate(time = hour(date_tz) + 
+#                minute(date_tz)/60 + 
+#                second(date_tz)/(60*60)) %>% 
+#       pull(time),
+#     units = "hours"
+#   ),
+#   units = "radians"
+# ))
 
 # convert back to hours
 conversion.circular(circular(test_departure$r.bar, 
@@ -483,14 +537,17 @@ conversion.circular(circular(test_departure$r.bar,
 conversion.circular(circular(test_arrival$r.bar, 
                              units = "radians"), 
                     units = "hours")
-conversion.circular(circular(test_benthic$r.bar, 
-                             units = "rad"), 
-                    units = "hours")
+# conversion.circular(circular(test_benthic$r.bar, 
+#                              units = "rad"), 
+#                     units = "hours")
 ```
 
 
 ```{r fig-windrose-1}
 #| fig-cap: "Circular histogram plots displaying the times (in hours) of when female northern elephant seals (n = 403) perform their first recorded dive upon departing for their foraging trip (a), the last dive performed before returning from their foraging trip (b), and the time when they perform all benthic dives across their foraging trip (c)."
+
+# interesting circular time series
+# https://campus.datacamp.com/courses/fraud-detection-in-r/introduction-motivation?ex=4
 
 # for departure
 windrose_departure <- data_windrose %>%
@@ -500,8 +557,19 @@ windrose_departure <- data_windrose %>%
   group_by(time) %>%
   summarise(nb_ind_hour = n()) %>%
   mutate(origin = "Departure") %>%
-  windrose(., grid = c(10, 20, 30), facet = T) +
-  theme(axis.title.x = element_blank())
+  windrose(., grid = c(10, 20, 30,35), facet = T) +
+  theme(axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  # geom_vline(xintercept = 6, 
+  #            linetype = "dashed") +
+  geom_text(data = data.frame(
+    x = rep(8,3),
+    y = c(13, 23, 33),
+    text = c(10, 20, 30)
+  ),
+  aes(x = x, y = y, label = text),
+  size = 2)
 
 # for arrival
 windrose_arrival <- data_windrose %>%
@@ -512,21 +580,35 @@ windrose_arrival <- data_windrose %>%
   summarise(nb_ind_hour = n()) %>%
   mutate(origin = "Arrival") %>%
   windrose(., grid = c(10, 20, 30), legend_position = "top", facet = T) +
-  theme(axis.title.y = element_blank())
+  theme(axis.title = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+    geom_text(data = data.frame(
+    x = rep(8,3),
+    y = c(13, 23, 33),
+    text = c(10, 20, 30)
+  ),
+  aes(x = x, y = y, label = text),
+  size = 2) 
 
-# for benthic dives
-windrose_benthic <- data_windrose %>%
-  group_by(id) %>%
-  filter(DiveTypeName == "Benthic") %>%
-  mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
-  group_by(time) %>%
-  summarise(nb_ind_hour = n()) %>%
-  mutate(origin = "Benthic") %>%
-  windrose(., grid = c(3000, 6000, 9000), facet = T) +
-  theme(
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank()
-  )
+label_x <- ggplot(data.frame(l = "Time (hours)", x = 1, y = 1)) +
+      geom_text(aes(x, y, label = l)) + 
+      theme_void() +
+      coord_cartesian(clip = "off")
+
+# # for benthic dives
+# windrose_benthic <- data_windrose %>%
+#   group_by(id) %>%
+#   filter(DiveTypeName == "Benthic") %>%
+#   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
+#   group_by(time) %>%
+#   summarise(nb_ind_hour = n()) %>%
+#   mutate(origin = "Benthic") %>%
+#   windrose(., grid = c(3000, 6000, 9000), facet = T) +
+#   theme(
+#     axis.title.x = element_blank(),
+#     axis.title.y = element_blank()
+#   )
 
 # for benthic dives with angle
 # windrose_angle_benthic <- 
@@ -542,10 +624,14 @@ windrose_benthic <- data_windrose %>%
   # geom_vline(xintercept = c(-6, -12, -18), linetype = "dashed")
 
 # combine all
-(windrose_departure + windrose_arrival + windrose_benthic) +
+(windrose_departure + windrose_arrival) / label_x +
   plot_layout(
+    heights = c(2,0),
     guides = "collect"
   ) &
+  plot_annotation(tag_levels = c("A")) &
+  theme(plot.tag.position = c(-0.05, 0.8),
+        plot.tag = element_text(size = 8, hjust = 0, vjust = 0)) +
   theme(legend.position = "top")
 ```
 ```{r}
@@ -569,15 +655,15 @@ psych::circadian.mean(
              second(date_tz) / (60 * 60)) %>% pull(time)
 )
 
-# benthic
-psych::circadian.mean(
-  data_windrose %>%
-    group_by(id) %>%
-    filter(DiveTypeName == "Benthic") %>%
-    mutate(time = hour(date_tz) +
-             minute(date_tz) / 60 +
-             second(date_tz) / (60 * 60)) %>% pull(time)
-)
+# # benthic
+# psych::circadian.mean(
+#   data_windrose %>%
+#     group_by(id) %>%
+#     filter(DiveTypeName == "Benthic") %>%
+#     mutate(time = hour(date_tz) +
+#              minute(date_tz) / 60 +
+#              second(date_tz) / (60 * 60)) %>% pull(time)
+# )
 ```
 
 :::{.callout-caution}
@@ -611,36 +697,71 @@ df_kernel_dens <- data_dive %>%
 ```
 
 ```{r}
-# check if background_ggoceanmaps exist
-if (file.exists("../export/background_ggoceanmap.rds")) {
-  trip <- readRDS("../export/background_ggoceanmap.rds")
+# with or without bathymetry
+with_bathy = F
+
+# if bathy
+if (with_bathy){
+  # check if background_ggoceanmaps exist
+  if (file.exists("../export/background_ggoceanmap.rds")) {
+    trip <- readRDS("../export/background_ggoceanmap.rds")
+  } else {
+    # using ggOceanMaps
+    trip <- basemap(
+      limits = c(170, -110, 20, 59),
+      bathymetry = TRUE,
+      shapefiles = "Arctic",
+      rotate = TRUE,
+      grid.col = NA
+    )
+    
+    # Make the graticules:
+    lims <- attributes(trip)$limits
+    graticule <- sf::st_graticule(
+      c(lims[1], lims[3], lims[2], lims[4]),
+      crs = attributes(trip)$proj,
+      lon = seq(-180, 180, 45),
+      lat = seq(-90, 90, 10)
+    )
+    
+    # Plot
+    trip = trip +
+      geom_sf(data = graticule, color = "grey50")
+    
+    # reorder layers
+    trip$layers <- trip$layers[c(1,3,2)]
+    
+    # save result
+    saveRDS(trip, "../export/background_ggoceanmap.rds")
+  }
 } else {
-  # using ggOceanMaps
-  trip <- basemap(
-    limits = c(170, -110, 20, 59),
-    bathymetry = TRUE,
-    shapefiles = "Arctic",
-    rotate = TRUE,
-    grid.col = NA
-  )
-  
-  # Make the graticules:
-  lims <- attributes(trip)$limits
-  graticule <- sf::st_graticule(
-    c(lims[1], lims[3], lims[2], lims[4]),
-    crs = attributes(trip)$proj,
-    lon = seq(-180, 180, 45),
-    lat = seq(-90, 90, 10)
-  )
-  
-  # Plot
-  trip = trip +
-    geom_sf(data = graticule, color = "grey50")
-  
-  trip$layers <- trip$layers[c(1,3,2)]
-  
-  # save result
-  saveRDS(trip, "../export/background_ggoceanmap.rds")
+   # using ggOceanMaps
+    trip <- basemap(
+      limits = c(170, -110, 20, 59),
+      land.col = '#cdaa6d',
+      bathymetry = FALSE,
+      shapefiles = "Arctic",
+      rotate = TRUE,
+      grid.col = NA
+    )
+    
+    # Make the graticules:
+    lims <- attributes(trip)$limits
+    graticule <- sf::st_graticule(
+      c(lims[1], lims[3], lims[2], lims[4]),
+      crs = attributes(trip)$proj,
+      lon = seq(-180, 180, 45),
+      lat = seq(-90, 90, 10)
+    )
+    
+    # Plot
+    trip = trip +
+      geom_sf(data = graticule, color = "grey70", linewidth = 0.3) +
+      theme(panel.background = element_rect(fill = "#4292c6"),
+            panel.ontop = FALSE)
+    
+    # reorder layers
+    trip$layers <- trip$layers[c(2,1)]
 }
 ```
 
@@ -675,7 +796,7 @@ df_kernel_dens_sf_kde <- st_kde(df_kernel_dens_sf,
 sf::sf_use_s2(FALSE)
 
 # plot
-trip +
+to_plot <- trip +
   # new scale
   new_scale_fill() +
   # kernel
@@ -698,6 +819,12 @@ trip +
   guides(alpha = "none") +
   # facet by origin
   facet_wrap(. ~ origin) 
+
+# reorder layers
+to_plot$layers <- to_plot$layers[c(1,3,2)]
+
+# display
+to_plot
 ```
 
 :::{.callout-caution}
@@ -809,7 +936,8 @@ trip_bis +
 ## Figure 3
 
 ```{r}
-# get predator distribution (extraction using google earth)
+# get predator distribution *.kmz (extraction using google earth)
+# for calculation
 Shark_area_coord <- read_sf("../export/shark.kmz") %>%
   smooth(., method = "ksmooth", smoothness = 0.5) %>% 
   # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
@@ -818,6 +946,37 @@ Shark_area_coord <- read_sf("../export/shark.kmz") %>%
   select(lon = X, lat = Y)
 Orca_area_coord <- read_sf("../export/orca.kmz") %>%
   smooth(., method = "ksmooth", smoothness = 0.5) %>%
+  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  select(lon = X, lat = Y)
+
+# for plots
+Overlap_area_coord_to_display <- st_intersection(
+  read_sf("../export/shark.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5),
+  read_sf("../export/orca.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5)
+) %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  select(lon = X, lat = Y)
+Shark_area_coord_to_display <- st_difference(
+  read_sf("../export/shark.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5),
+  read_sf("../export/orca.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5)
+) %>%
+  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  select(lon = X, lat = Y)
+Orca_area_coord_to_display <- st_difference(
+  read_sf("../export/orca.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5),
+  read_sf("../export/shark.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5)
+) %>%
   # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
   st_coordinates() %>%
   as_tibble() %>%
@@ -842,19 +1001,21 @@ data_dive <- data_dive %>%
     ),
     overlap_area = as.numeric(if_else(shark_area == 1 &
                                         orca_area == 1, T, F)),
-    full_area = as.numeric(if_else(shark_area == 0 &
+    total_area = as.numeric(if_else(shark_area == 0 &
                                      orca_area == 0, F, T))
   )
 ```
 
 ```{r}
 data_dive_longer <- pivot_longer(
-  data_dive,
+  data_dive %>% 
+    # keep data with locations
+    filter(!is.na(Lat)),
   c(
     "shark_area",
     "orca_area",
     "overlap_area",
-    "full_area"
+    "total_area"
   ),
   names_to = "areas",
   values_to = "in_out"
@@ -901,7 +1062,7 @@ data_descriptive_area <- data_descriptive_ind %>%
                           "overlap_area",
                           "orca_area",
                           "shark_area",
-                          "full_area"
+                          "total_area"
                         )
   ))
 
@@ -942,7 +1103,7 @@ inside_bar_plot = data_descriptive_area %>%
   ggplot(aes(x = mean, y = areas, fill = areas)) +
   facet_grid(in_out ~ ., scales = "free_y") +
   geom_col(show.legend = F) +
-  scale_fill_manual(values = c("#E1E826", "#E66100", "#9A6BEC", "#004D40")) +
+  scale_fill_manual(values = c("#004D40", "#E66100", "#9A6BEC", "#E1E826")) +
   new_scale_fill() +
   geom_col(
     show.legend = F,
@@ -959,8 +1120,8 @@ inside_bar_plot = data_descriptive_area %>%
                 width = 0.05) +
   coord_flip(xlim = c(0, max(data_descriptive_area$mean))) +
   scale_x_continuous(
-    breaks = c(-0.6,-0.4,-0.2, 0.2, 0.4, 0.6),
-    expand = c(0, 0),
+    # breaks = c(-0.6,-0.4,-0.2, 0.2, 0.4, 0.6),
+    expand = expansion(mult = c(0,0.1), add = 0),
     labels = function(x) {
       scales::percent(abs(x), 1)
     }
@@ -996,7 +1157,7 @@ outside_bar_plot = data_descriptive_area %>%
   ggplot(aes(x = mean, y = areas, fill = areas)) +
   facet_grid(in_out ~ ., scales = "free_y") +
   geom_col(show.legend = F) +
-  scale_fill_manual(values = c("#E1E826", "#E66100", "#9A6BEC", "#004D40")) +
+  scale_fill_manual(values = c("#004D40", "#E66100", "#9A6BEC", "#E1E826")) +
   new_scale_fill() +
   geom_col(show.legend = F, mapping = aes(x = mean, 
                                           y = areas, 
@@ -1014,7 +1175,7 @@ outside_bar_plot = data_descriptive_area %>%
   coord_flip(xlim = c(-max(data_descriptive_area$mean), 0)) +
   scale_x_continuous(
     # breaks = c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6),
-    expand = c(0, 0),
+    expand = expansion(mult = c(0.1,0), add = 0),
     labels = function(x) {
       scales::percent(abs(x), 1)
     }
@@ -1055,13 +1216,11 @@ ABBBBBBBBBBB
 ACCCCCCCCCCC
 "
 
-predator_stat_choice_1 <- label_x_bar_plot + 
-  # 
-  (inside_bar_plot + theme(plot.margin = unit(c(0,0,0,0), "pt"))) + 
-   (outside_bar_plot + theme(plot.margin = unit(c(0,0,0,0), "pt"))) + 
-  plot_layout(design =layout)
+predator_stat_choice_1 <- label_x_bar_plot +
+  (inside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+  (outside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+  plot_layout(design = layout)
 ```
-
 
 
 ```{r}
@@ -1069,7 +1228,7 @@ predator_stat_choice_1 <- label_x_bar_plot +
 predator_stat_choice_2 <- data_descriptive_area %>%
   ggplot(aes(y = mean, x = areas, fill = areas)) +
   geom_bar(position = "fill", stat = "identity", show.legend = F) +
-  scale_fill_manual(values = c("#E1E826", "#E66100", "#9A6BEC", "#004D40")) +
+  scale_fill_manual(values = c("#004D40", "#E66100", "#9A6BEC", "#E1E826")) +
   new_scale_fill() +
   geom_bar(
     mapping = aes(y = mean,
@@ -1116,32 +1275,66 @@ predator_stat_choice_2 <- data_descriptive_area %>%
 # https://davidmathlogic.com/colorblind/#%23D81B60-%231E88E5-%23FFC107-%23004D40
 # combine areas
 areas_coord <- rbind(
-  Shark_area_coord %>% mutate(Predator = "shark"),
-  Orca_area_coord %>% mutate(Predator = "orca")
+  Orca_area_coord_to_display %>% mutate(Predator = "orca"),
+  Shark_area_coord_to_display %>% mutate(Predator = "shark"),
+  Overlap_area_coord_to_display %>% mutate(Predator = "overlap")
+) %>% 
+  mutate(Predator = factor(Predator, levels = c("orca", "shark", "overlap")))
+
+# data use to compute kernel density estimation
+df_kernel_dens_benthic <- data_dive %>%
+  # only with location data
+  filter(!is.na(Lat) & DiveTypeName == "Benthic") %>%
+  # select only the required columns
+  select(lat = Lat, long = Long, id, DiveTypeName) %>%
+  # create col to nicely display dive type
+  mutate(origin = paste(DiveTypeName, "dives"))
+
+# transform data into sf object
+df_kernel_dens_sf_benthic <- st_as_sf(
+  df_kernel_dens_benthic,
+  coords = c("long", "lat"),
+  crs = st_crs(4326)
+)
+
+# make it's group_by origin
+df_kernel_dens_sf_benthic <- group_by(df_kernel_dens_sf_benthic, origin)
+
+# kernel density estimation
+df_kernel_dens_sf_kde_benthic <- st_kde(df_kernel_dens_sf_benthic,
+                                H = diag(c(
+                                  MASS::bandwidth.nrd(
+                                    sf::st_coordinates(df_kernel_dens_sf_benthic)[, 1]
+                                  ),
+                                  MASS::bandwidth.nrd(
+                                    sf::st_coordinates(df_kernel_dens_sf_benthic)[, 2]
+                                  )
+                                ) / 4)^2
 )
 
 # plot
 predator_map <- trip +
   # new scale
   new_scale_fill() +
-  # add point
-  geom_spatial_point(
-    data = data_dive %>% 
-      filter(DiveTypeName == "Benthic"),
-    aes(x = Long, y = Lat, fill = "black"),
-    alpha = 0.05,
-    shape = 20,
-    stroke = NA,
-    crs = 4326
+  # kernel
+  geom_sf(
+    data = st_get_contour(
+      # geospatial kernel
+      df_kernel_dens_sf_kde_benthic,
+      # probabilities
+      cont = c(50, 80, 95, 99)
+    ),
+    # display
+    aes(fill = label_percent(contlabel)),
+    # alpha = 0.7
   ) +
-  # color palette
-  scale_fill_manual(
-    name = "Dive",
-    labels = "Benthic",
-    values = "black"
-  ) +
-  # should I display legend?
-  guides(fill = "none") +
+  # same colour bar
+  # scale_fill_viridis_d(option = "plasma") +
+  scale_fill_grey() +
+  # legend
+  labs(fill = "Probs") +
+  # no display alpha
+  guides(alpha = "none") +
   # new scale
   new_scale_fill() +
   # add spatial polygon
@@ -1158,21 +1351,17 @@ predator_map <- trip +
   ) +
   # color palette
   scale_fill_manual(
-    values = c("#E66100", "#9A6BEC")
+    values = c("#E66100", "#9A6BEC", "#004D40")
   ) +
   scale_color_manual(
-    values = c("#E66100", "#9A6BEC")
+    values = c("#E66100", "#9A6BEC", "#004D40")
   ) + 
   # set limit from predator_map$layers[[1]]$data
   coord_sf(xlim=c(-5579139, 5579139), 
            ylim = c(-8679599,-2642510))
 
 # reordering layers (continent on top)
-predator_map$layers <-
-  c(
-    predator_map$layers[c(1:2, 4:length(predator_map$layers))],
-    predator_map$layers[3]
-  )
+predator_map$layers <- predator_map$layers[c(1,4,3,2)]
 ```
 
 ```{r fig-map-3}
@@ -1187,6 +1376,12 @@ layout <- "
 BCCCCCCCCCCCCCCCCCCCCCCC
 BDDDDDDDDDDDDDDDDDDDDDDD
 "
+
+predator_map$layers[[4]]$aes_params$fill_new_new = "#cdaa6d"
+predator_map$layers[[4]]$aes_params$colour = "black"
+
+# predator_map$layers[[4]]$aes_params$fill_new_new = "grey60"
+# predator_map$layers[[4]]$aes_params$colour = "black"
 
 # display
 (predator_map + theme(legend.position = "none")) +
@@ -1592,8 +1787,27 @@ prop_at_sea <- data_dive %>%
       scales::percent(abs(x), 1)
     }
   ) +
-  theme(
-    panel.grid.major = element_blank(),
+  annotate("text", x = 5.3, y = 0.4, label = "Departure") +
+  annotate("text", x = 16, y = 0.5, label = "Arrival") +
+  geom_curve(
+    data =   tibble(
+      x1 = c(4, 17),
+      x2 = c(1.5, 19.5),
+      y1 = c(0.4, 0.5),
+      y2 = c(0.31, 0.55)
+    ),
+    aes(
+      x = x1,
+      y = y1,
+      xend = x2,
+      yend = y2
+    ),
+    arrow = arrow(length = unit(0.08, "inch")),
+    linewidth = 0.5,
+    color = "gray20",
+    curvature = 0.3
+  ) +
+  theme(  panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     panel.background = element_blank(),
     axis.line = element_line(arrow = arrow(
