@@ -68,8 +68,9 @@ library(CircStats)
 # char
 library(stringr)
 
-# solar angle
+# solar angle and timezone
 library(suncalc)
+library(lutz)
 
 # data wrangling
 library(tidyr)
@@ -91,7 +92,9 @@ windrose <-
            set_title = NULL,
            legend_position = "none",
            facet_wrap = F,
-           facet_grid = F) {
+           facet_grid = F,
+           hour_sunset = 20,
+           hour_sunrise = 7) {
     # this code comes from Roxanne
     uniqhours <- 1:24 * (360 / 24)
     
@@ -106,7 +109,7 @@ windrose <-
       } else {
         temp <- c(temp, rep(uniqhours[i], data_to_plot$nb_ind_hour[i]))
         day_night <- c(day_night, rep(
-          if_else(between(i, 7, 20), "day", "night"),
+          if_else(between(i, hour_sunrise, hour_sunset), "day", "night"),
           data_to_plot$nb_ind_hour[i]
         ))
       }
@@ -271,10 +274,10 @@ data_dive <- data_dive %>%
       DiveTypeName
     ))
 
-# add post-molting vs post-breeding trip
+# add Post Molting vs Post Breeding trip
 data_dive <- data_dive %>% 
   group_by(id) %>% 
-  mutate(trip = if_else(between(month(first(date)), 1,3), "Post-breeding", "Post-molting")) 
+  mutate(trip = if_else(between(month(first(date)), 1,3), "Post Breeding", "Post Molting")) 
 ```
 
 # Data Visualisation
@@ -386,7 +389,7 @@ table_1_a <- data_dive %>%
                 "n_benthic_dives_proportion")
   ) %>%
   tab_spanner(
-    label = "% benthic dives",
+    label = "% Benthic dives per area",
     columns = c(
       "n_benthic_dives_in_shark_proportion",
       "n_benthic_dives_in_orca_proportion",
@@ -403,8 +406,8 @@ table_1_a <- data_dive %>%
     n_dives_wo_loc = "w/o loc",
     n_benthic_dives = "Total",
     n_benthic_dives_proportion = "Proportion",
-    n_benthic_dives_in_shark_proportion = "Shark area",
-    n_benthic_dives_in_orca_proportion = "Orca area",
+    n_benthic_dives_in_shark_proportion = "Shark",
+    n_benthic_dives_in_orca_proportion = "Orca",
     n_benthic_dives_in_shark_or_orca = "Total",
     n_benthic_dives_in_shark_and_orca = "Overlap"
   ) %>%
@@ -644,13 +647,13 @@ table_1_b <- data_dive %>%
 ```
 
 ```{r tbl-1a}
-#| tbl-cap: Summary of dataset characteristics for post-Breeding and post-molting foraging trips in northern elephant seals.
+#| tbl-cap: Summary of dataset characteristics for Post Breeding and Post Molting foraging trips in northern elephant seals.
 # display first table
 table_1_a
 ```
 
 ```{r tbl-1b}
-#| tbl-cap: Individual-level summary of dataset characteristics for post-breeding and post-molting foraging trips in northern elephant seals
+#| tbl-cap: Individual-level summary of dataset characteristics for Post Breeding and Post Molting foraging trips in northern elephant seals
 # display second table
 table_1_b
 ```
@@ -658,9 +661,9 @@ table_1_b
 ::: callout-important
 ### Notes
 
--   Two separates tables or Stacked tables?
+-   Table 1: Summary of dataset characteristics for Post Breeding and Post Molting foraging trips in northern elephant seals.
 
--   Should we keep all the information?
+-   Table 2: Individual-level summary of dataset characteristics for Post Breeding and Post Molting foraging trips in northern elephant seals
 :::
 
 ## Figure 1
@@ -697,10 +700,7 @@ data_dive %>%
     arrange(nb_dives) %>% View()
 ```
 
-```{r fig-1}
-#| fig-cap: Snapshot of departure and arrival dive profiles for three seals accross their post-breeding and post-molting trips. Departure and arrival were constrained to 36 hours. Shading indicates night and coloration indicates dive type.
-#| fig-height: 7
-
+```{r}
 # import the csv export
 tdr_data <- lapply(
   list.files(
@@ -825,28 +825,51 @@ sun_data <-
     all.x = TRUE,
   ) %>%
   mutate(
-    test_sunset = if_else(
+    # make sure sunset is not outside the 36h period
+    correct_sunset = if_else(
+      # if not
       between(sunset, date_low, date_high),
       sunset,
+      # if so, replace by one extremum
       if_else(sunset < date_low, date_low, date_high)
     ),
-    test_sunrise = if_else(
+    # make sure sunrise is not outside the 36h period
+    correct_sunrise = if_else(
+      # if not
       between(sunrise, date_low, date_high),
       sunrise,
+      # if so, replace by one extremum
       if_else(sunrise < date_low, date_low, date_high)
+    )
+  ) %>% 
+  # shift everything to start 2000-01-01 00:00:00
+  mutate(
+    correct_sunset_shift = correct_sunset - (
+    date_low - as.POSIXct("2000-01-01 00:00:00",tz = "UTC")
+    ),
+    correct_sunrise_shift = correct_sunrise - (
+    date_low - as.POSIXct("2000-01-01 00:00:00",tz = "UTC")
     )
   )
 
 # plot
-data_plot %>%
+departure_dp <- data_plot %>%
+  filter(phase == "Departure") %>%
+  group_by(id, phase) %>%
+  # make the date starts on 2000-01-01 00:00:00
+  mutate(datetime = datetime - (
+    first(datetime) - as.POSIXct("2000-01-01 00:00:00", tz = "UTC")
+  )) %>%
+  ungroup() %>%
   mutate(`Dive Type` = if_else(DiveTypeName == "Benthic", "Benthic", "Other")) %>%
   ggplot(aes(x = datetime, y = depth, col = `Dive Type`, group = id)) +
   scale_color_manual(values = c("Benthic" = "#008c49", "Other" = "grey10")) +
   geom_rect(
-    data = sun_data,
+    data = sun_data %>%
+      filter(phase == "Departure"),
     aes(
-      xmin = test_sunset,
-      xmax = test_sunrise,
+      xmin = correct_sunset_shift,
+      xmax = correct_sunrise_shift,
       ymin = -Inf,
       ymax = +Inf
     ),
@@ -856,18 +879,91 @@ data_plot %>%
   # geom_path(aes(x = datetime, y = abs(bathy))) +
   geom_path() +
   scale_x_datetime(
-    date_breaks = "6 hours",
-    date_labels = "%Hh",
+    # date_breaks = "6 hours",
+    # date_labels = "+ %Hh",
+    breaks = seq.POSIXt(
+      as.POSIXct("2000-01-01 06:00:00", tz = "UTC"),
+      as.POSIXct("2000-01-02 06:00:00", tz = "UTC"),
+      by = "6 hour"
+    ), 
+    labels = c("+6h", "+12h", "+18h", "+24h", "+30h"),
     position = "top"
   ) +
   scale_y_reverse() +
   labs(x = "Time", y = "Depth (m)") +
-  facet_nested(trip + id ~ phase,
+  # facet_nested(trip + id ~ phase,
+  facet_nested(id ~ phase,
     scales = "free",
-    independent = "x",
-    switch = "x"
+    # independent = "x"
   ) +
   theme(
+    strip.placement = "outside",
+    strip.text.y = element_blank(),
+    legend.position = "top",
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    panel.grid.major = element_line(color = "grey90"),
+    axis.line.x = element_line(
+      color = "black",
+      # arrow = arrow(length = unit(0.2, "lines"), type = "closed")
+    ),
+    axis.line.y = element_line(
+      color = "black",
+      arrow = arrow(
+        length = unit(0.2, "lines"),
+        type = "closed",
+        ends = "first"
+      )
+    ),
+    axis.title.x = element_blank()
+  )
+
+arrival_dp <- data_plot %>%
+  filter(phase == "Arrival") %>%
+  group_by(id, phase) %>%
+  # make the date starts on 2000-01-01 00:00:00
+  mutate(datetime = datetime - (
+    first(datetime) - as.POSIXct("2000-01-01 00:00:00", tz = "UTC")
+  )) %>%
+  ungroup() %>%
+  mutate(`Dive Type` = if_else(DiveTypeName == "Benthic", "Benthic", "Other")) %>%
+  ggplot(aes(x = datetime, y = depth, col = `Dive Type`, group = id)) +
+  scale_color_manual(values = c("Benthic" = "#008c49", "Other" = "grey10")) +
+  geom_rect(
+    data = sun_data %>%
+      filter(phase == "Arrival"),
+    aes(
+      xmin = correct_sunset_shift,
+      xmax = correct_sunrise_shift,
+      ymin = -Inf,
+      ymax = +Inf
+    ),
+    alpha = 0.4,
+    inherit.aes = FALSE
+  ) +
+  # geom_path(aes(x = datetime, y = abs(bathy))) +
+  geom_path() +
+  scale_x_datetime(
+    # date_breaks = "6 hours",
+    # date_labels = "+ %Hh",
+    breaks = seq.POSIXt(
+      as.POSIXct("2000-01-01 06:00:00", tz = "UTC"),
+      as.POSIXct("2000-01-02 06:00:00", tz = "UTC"),
+      by = "6 hour"
+    ), 
+    labels = c("-30h", "-24h", "-18h", "-12h", "-6h"),
+    position = "top"
+  ) +
+  scale_y_reverse() +
+  labs(x = "Time", y = "Depth (m)") +
+  # facet_nested(trip + id ~ phase,
+  facet_nested(id ~ phase,
+    scales = "free",
+    # independent = "x"
+  ) +
+  theme(
+    strip.placement = "outside",
     legend.position = "top",
     panel.grid.minor = element_blank(),
     panel.border = element_blank(),
@@ -877,27 +973,38 @@ data_plot %>%
       color = "black",
       arrow = arrow(length = unit(0.2, "lines"), type = "closed")
     ),
-    axis.line.y = element_line(
-      color = "black",
-      arrow = arrow(
-        length = unit(0.2, "lines"),
-        type = "closed",
-        ends = "first"
-      )
-    )
+    axis.line.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    axis.title.x = element_blank()
+  )
+
+fig_label_x <-
+  ggplot(data.frame(l = "Time", x = 1, y = 1)) +
+  geom_text(aes(x, y, label = l)) +
+  theme_void() +
+  coord_cartesian(clip = "off")
+```
+
+```{r fig-1}
+#| fig-cap: Snapshot of departure and arrival dive profiles for six seals. Departure and arrival were constrained to 36 hours. Shading indicates night and coloration indicates dive type.
+#| fig-height: 7
+
+
+guide_area() / fig_label_x / (departure_dp | arrival_dp) +
+  plot_layout(
+    guides = 'collect',
+    heights = c(0.5,0.7,6)
+    ) &
+  theme(
+    legend.position = "top",
+    plot.margin = unit(c(0,0,0,0), "npc")
   )
 ```
 
 ::: callout-important
 ### Notes
-
--   Choice of seals?
-
--   Two or three seals per trip?
-
--   Is that an issue that day and night do not aligned across individuals?
-
--   TODO: Change times for +xxh (+1h, +2h)
 
 -   TODO: Add three dots between Departure and Arrival
 :::
@@ -920,7 +1027,27 @@ data_windrose <- data_dive %>%
   # keep only the first, last date, but also all benthic dives
   filter(date == min(date) |
            date == max(date) |
-           DiveTypeName == "Benthic")
+           DiveTypeName == "Benthic") %>% 
+  # ungroup 
+  ungroup() %>% 
+  # change colnames to make getSunlightTimes works
+  mutate(
+    date = as.Date(date_tz), 
+    lat = Lat,
+    lon = Long) %>% 
+  # calculate hour of sunset and hour of sunrise
+  mutate(
+    getSunlightTimes(data = .,
+                     keep = c("sunrise", "sunset"),
+                     tz = tz_lookup_coords(lat = Lat,
+                                lon = Long,
+                                method = "accurate"))
+  ) %>% 
+  # extract hours of sunset an sunrise
+  mutate(
+    h_sunrise = hour(sunrise),
+    h_sunset = hour(sunset)
+  )
 ```
 
 ```{r}
@@ -938,7 +1065,7 @@ hour_time_2_radian <- function(x, high = 24, low = 0){
 test_departure_pm = CircStats::r.test(
   data_windrose %>%
       group_by(id) %>%
-      filter(DiveNumber == 1 & trip == "Post-molting") %>%
+      filter(DiveNumber == 1 & trip == "Post Molting") %>%
       mutate(time = hour(date_tz) +
                minute(date_tz)/60 +
                second(date_tz)/(60*60)) %>%
@@ -947,7 +1074,7 @@ test_departure_pm = CircStats::r.test(
 test_departure_pb = CircStats::r.test(
   data_windrose %>%
       group_by(id) %>%
-      filter(DiveNumber == 1 & trip == "Post-breeding") %>%
+      filter(DiveNumber == 1 & trip == "Post Breeding") %>%
       mutate(time = hour(date_tz) +
                minute(date_tz)/60 +
                second(date_tz)/(60*60)) %>%
@@ -959,7 +1086,7 @@ test_arrival_pm = r.test(conversion.circular(
   circular(
     data_windrose %>%
       group_by(id) %>%
-      filter(date_tz == max(date_tz) & trip == "Post-molting") %>%
+      filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
       mutate(time = hour(date_tz) +
                minute(date_tz)/60 +
                second(date_tz)/(60*60)) %>% pull(time),
@@ -971,7 +1098,7 @@ test_arrival_pb = r.test(conversion.circular(
   circular(
     data_windrose %>%
       group_by(id) %>%
-      filter(date_tz == max(date_tz) & trip == "Post-breeding") %>%
+      filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
       mutate(time = hour(date_tz) +
                minute(date_tz)/60 +
                second(date_tz)/(60*60)) %>% pull(time),
@@ -1014,7 +1141,7 @@ conversion.circular(circular(test_arrival_pb$r.bar,
 ```
 
 ```{r fig-windrose-1}
-#| fig-cap: "Circular histogram plots display the local timing (in hours) for the first and last recorded dives (respectively departure and arrival) of adult female northern elephant seals (n = 403) during their post-breeding and post-molting foraging trips."
+#| fig-cap: "Circular histogram plots display the local timing (in hours) for the first and last recorded dives (respectively departure and arrival) of adult female northern elephant seals (n = 403) during their Post Breeding and Post Molting foraging trips."
 #| fig-asp: 1
 #| fig-width: 7
 
@@ -1024,12 +1151,24 @@ conversion.circular(circular(test_arrival_pb$r.bar,
 # for departure
 windrose_departure_pm <- data_windrose %>%
   group_by(id) %>%
-  filter(DiveNumber == 1 & trip == "Post-molting") %>%
+  filter(DiveNumber == 1 & trip == "Post Molting") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
   mutate(origin = "Departure") %>%
-  windrose(., grid = c(5, 10, 15), facet_wrap = "origin") +
+  windrose(., 
+           grid = c(5, 10, 15), 
+           facet_wrap = "origin",
+           hour_sunrise = data_windrose %>%
+             filter(DiveNumber == 1 &
+                      trip == "Post Molting") %>% 
+             pull(h_sunrise) %>% 
+             median(.), 
+           hour_sunset = data_windrose %>%
+             filter(DiveNumber == 1 &
+                      trip == "Post Molting") %>% 
+             pull(h_sunset) %>% 
+             median(.)) +
   theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) +
@@ -1045,12 +1184,23 @@ windrose_departure_pm <- data_windrose %>%
 
 windrose_departure_pb <- data_windrose %>%
   group_by(id) %>%
-  filter(DiveNumber == 1 & trip == "Post-breeding") %>%
+  filter(DiveNumber == 1 & trip == "Post Breeding") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
   mutate(origin = "Departure") %>%
-  windrose(., grid = c(5, 10, 15)) +
+  windrose(., 
+           grid = c(5, 10, 15),
+           hour_sunrise = data_windrose %>%
+             filter(DiveNumber == 1 &
+                      trip == "Post Breeding") %>% 
+             pull(h_sunrise) %>% 
+             median(.), 
+           hour_sunset = data_windrose %>%
+             filter(DiveNumber == 1 &
+                      trip == "Post Breeding") %>% 
+             pull(h_sunset) %>% 
+             median(.)) +
   theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) #+
@@ -1067,14 +1217,24 @@ windrose_departure_pb <- data_windrose %>%
 # for arrival
 windrose_arrival_pm <- data_windrose %>%
   group_by(id) %>%
-  filter(date_tz == max(date_tz) & trip == "Post-molting") %>%
+  filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
   mutate(origin = "Arrival") %>%
   windrose(., grid = c(5, 10, 15),
            legend_position = "top",
-           facet_grid = T) +
+           facet_grid = T,
+           hour_sunrise = data_windrose %>%
+             filter(date_tz == max(date_tz) &
+                      trip == "Post Molting") %>% 
+             pull(h_sunrise) %>% 
+             median(.), 
+           hour_sunset = data_windrose %>%
+             filter(date_tz == max(date_tz) &
+                      trip == "Post Molting") %>% 
+             pull(h_sunset) %>% 
+             median(.)) +
   theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) #+
@@ -1088,14 +1248,24 @@ windrose_arrival_pm <- data_windrose %>%
 
 windrose_arrival_pb <- data_windrose %>%
   group_by(id) %>%
-  filter(date_tz == max(date_tz) & trip == "Post-breeding") %>%
+  filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
   mutate(origin = "Arrival") %>%
   windrose(., grid = c(5, 10, 15),
            legend_position = "top",
-           facet_wrap = "trip") +
+           facet_wrap = "trip",
+           hour_sunrise = data_windrose %>%
+             filter(date_tz == max(date_tz) &
+                      trip == "Post Breeding") %>% 
+             pull(h_sunrise) %>% 
+             median(.), 
+           hour_sunset = data_windrose %>%
+             filter(date_tz == max(date_tz) &
+                      trip == "Post Breeding") %>% 
+             pull(h_sunset) %>% 
+             median(.)) +
   theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) #+
@@ -1138,7 +1308,7 @@ label_x <- ggplot(data.frame(l = "Time (hours)", x = 1, y = 1)) +
 psych::circadian.mean(
   data_windrose %>%
     group_by(id) %>%
-    filter(DiveNumber == 1 & trip == "Post-molting") %>%
+    filter(DiveNumber == 1 & trip == "Post Molting") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
@@ -1148,7 +1318,7 @@ psych::circadian.mean(
 psych::circadian.mean(
   data_windrose %>%
     group_by(id) %>%
-    filter(DiveNumber == 1 & trip == "Post-breeding") %>%
+    filter(DiveNumber == 1 & trip == "Post Breeding") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
@@ -1158,7 +1328,7 @@ psych::circadian.mean(
 psych::circadian.mean(
   data_windrose %>%
     group_by(id) %>%
-    filter(date_tz == max(date_tz) & trip == "Post-molting") %>%
+    filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
@@ -1168,7 +1338,7 @@ psych::circadian.mean(
 psych::circadian.mean(
   data_windrose %>%
     group_by(id) %>%
-    filter(date_tz == max(date_tz) & trip == "Post-breeding") %>%
+    filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
@@ -1321,189 +1491,189 @@ data_dive <- data_dive %>%
 ```
 
 ```{r}
-data_dive_longer <- pivot_longer(
-  data_dive %>% 
-    # keep data with locations
-    filter(!is.na(Lat)),
-  c(
-    "shark_area",
-    "orca_area",
-    "overlap_area",
-    "total_area"
-  ),
-  names_to = "areas",
-  values_to = "in_out"
-)
-
-data_descriptive_ind <- data_dive_longer %>%
-  filter(DiveTypeName == "Benthic") %>%
-  group_by(areas, id) %>%
-  summarise(
-    n_tot = n(),
-    n_inside = length(id[in_out == 1]),
-    n_outside = length(id[in_out == 0]),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    perc_inside = n_inside / n_tot,
-    perc_outside = n_outside / n_tot
-  )
-
-data_descriptive_area <- data_descriptive_ind %>%
-  group_by(areas) %>%
-  summarise(
-    mean_perc_inside = wtd.mean(perc_inside, n_tot),
-    mean_perc_outside = wtd.mean(perc_outside, n_tot),
-    sd_perc_inside = sqrt(wtd.var(perc_inside, n_tot)),
-    sd_perc_outside = sqrt(wtd.var(perc_outside, n_tot)),
-    # based from here: https://stats.stackexchange.com/questions/25895/computing-standard-error-in-weighted-mean-estimation
-    se_perc_inside = sqrt(wtd.var(perc_inside, n_tot)*sum((n_tot/sum(n_tot))^2)),
-    se_perc_outside = sqrt(wtd.var(perc_outside, n_tot)*sum((n_tot/sum(n_tot))^2)),
-  ) %>%
-  pivot_longer(
-    cols = ends_with("inside") |
-      ends_with("outside"),
-    names_to = c("stat", "in_out"),
-    names_pattern = "(.*)_perc_(.*)"
-  ) %>%
-  pivot_wider(
-    id_cols = c("areas", "in_out"),
-    names_from = "stat",
-    values_from = "value"
-  ) %>%
-  mutate(areas = factor(areas,
-                        level = c(
-                          "overlap_area",
-                          "orca_area",
-                          "shark_area",
-                          "total_area"
-                        )
-  ))
-
-data_stat_area <- data_dive_longer %>%
-  filter(DiveTypeName == "Benthic") %>%
-  group_by(areas, in_out) %>%
-  summarise(nb_area = n(), .groups = "drop_last") %>%
-  mutate(nb_total = sum(nb_area)) %>%
-  summarise(rstatix::prop_test(x = nb_area, n = nb_total))
+# data_dive_longer <- pivot_longer(
+#   data_dive %>% 
+#     # keep data with locations
+#     filter(!is.na(Lat)),
+#   c(
+#     "shark_area",
+#     "orca_area",
+#     "overlap_area",
+#     "total_area"
+#   ),
+#   names_to = "areas",
+#   values_to = "in_out"
+# )
+# 
+# data_descriptive_ind <- data_dive_longer %>%
+#   filter(DiveTypeName == "Benthic") %>%
+#   group_by(areas, id) %>%
+#   summarise(
+#     n_tot = n(),
+#     n_inside = length(id[in_out == 1]),
+#     n_outside = length(id[in_out == 0]),
+#     .groups = "drop"
+#   ) %>%
+#   mutate(
+#     perc_inside = n_inside / n_tot,
+#     perc_outside = n_outside / n_tot
+#   )
+# 
+# data_descriptive_area <- data_descriptive_ind %>%
+#   group_by(areas) %>%
+#   summarise(
+#     mean_perc_inside = wtd.mean(perc_inside, n_tot),
+#     mean_perc_outside = wtd.mean(perc_outside, n_tot),
+#     sd_perc_inside = sqrt(wtd.var(perc_inside, n_tot)),
+#     sd_perc_outside = sqrt(wtd.var(perc_outside, n_tot)),
+#     # based from here: https://stats.stackexchange.com/questions/25895/computing-standard-error-in-weighted-mean-estimation
+#     se_perc_inside = sqrt(wtd.var(perc_inside, n_tot)*sum((n_tot/sum(n_tot))^2)),
+#     se_perc_outside = sqrt(wtd.var(perc_outside, n_tot)*sum((n_tot/sum(n_tot))^2)),
+#   ) %>%
+#   pivot_longer(
+#     cols = ends_with("inside") |
+#       ends_with("outside"),
+#     names_to = c("stat", "in_out"),
+#     names_pattern = "(.*)_perc_(.*)"
+#   ) %>%
+#   pivot_wider(
+#     id_cols = c("areas", "in_out"),
+#     names_from = "stat",
+#     values_from = "value"
+#   ) %>%
+#   mutate(areas = factor(areas,
+#                         level = c(
+#                           "overlap_area",
+#                           "orca_area",
+#                           "shark_area",
+#                           "total_area"
+#                         )
+#   ))
+# 
+# data_stat_area <- data_dive_longer %>%
+#   filter(DiveTypeName == "Benthic") %>%
+#   group_by(areas, in_out) %>%
+#   summarise(nb_area = n(), .groups = "drop_last") %>%
+#   mutate(nb_total = sum(nb_area)) %>%
+#   summarise(rstatix::prop_test(x = nb_area, n = nb_total))
 ```
 
 ```{r}
-inside_bar_plot = data_descriptive_area %>%
-  mutate(
-    mean = if_else(in_out == "outside", -mean, mean),
-    sd = if_else(in_out == "outside", -sd, sd),
-    se = if_else(in_out == "outside", -se, se)
-  ) %>%
-  filter(in_out == "inside") %>%
-  ggplot(aes(x = mean, y = areas, fill = areas)) +
-  facet_grid(in_out ~ ., scales = "free_y") +
-  geom_col(show.legend = F) +
-  scale_fill_manual(values = c("#9A6BEC", "#E66100", "#E1E826", "#004D40")) +
-  new_scale_fill() +
-  geom_col(
-    show.legend = F,
-    mapping = aes(
-      x = mean,
-      y = areas,
-      fill = in_out),
-    alpha = 0.3
-  ) +
-  scale_fill_manual(values = c("grey70")) +
-  geom_errorbar(mapping = aes(xmin = -se,
-                              xmax = se),
-                # reduce size of horizontal bar of the errorbar
-                width = 0.05) +
-  coord_flip(xlim = c(0, max(data_descriptive_area$mean))) +
-  scale_x_continuous(
-    # breaks = c(-0.6,-0.4,-0.2, 0.2, 0.4, 0.6),
-    expand = expansion(mult = c(0,0.1), add = 0),
-    labels = function(x) {
-      scales::percent(abs(x), 1)
-    }
-  ) +
-  scale_y_discrete(
-    labels = function(x) {
-      lapply(x, function(x)
-        (str_split(str_to_title(x), "_"))[[1]][1])
-    }
-  ) +
-  theme(
-    panel.spacing.y = unit(0, "mm"),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_blank(),
-    axis.line.y = element_line(arrow = arrow(
-      angle = 20,
-      length = unit(.10, "inches"),
-      type = "closed"
-    )),
-    axis.title = element_blank(),
-    axis.ticks.length.x = unit(0, units = "mm"),
-    axis.text.x = element_blank()
-  )
-
-outside_bar_plot = data_descriptive_area %>%
-  mutate(
-    mean = if_else(in_out == "outside",-mean, mean),
-    sd = if_else(in_out == "outside",-sd, sd),
-    se = if_else(in_out == "outside",-se, se)
-  ) %>%
-  filter(in_out == "outside") %>% 
-  ggplot(aes(x = mean, y = areas, fill = areas)) +
-  facet_grid(in_out ~ ., scales = "free_y") +
-  geom_col(show.legend = F) +
-  scale_fill_manual(values = c("#9A6BEC", "#E66100", "#E1E826", "#004D40")) +
-  new_scale_fill() +
-  geom_col(show.legend = F, mapping = aes(x = mean, 
-                                          y = areas, 
-                                          fill = in_out),
-                                          alpha = 0.3) +
-  scale_fill_manual(values = c("grey30")) +
-  geom_errorbar(
-    mapping = aes(
-      xmin = -se,
-      xmax = se
-    ),
-    # reduce size of horizontal bar of the errorbar
-    width = 0.05
-  ) +
-  coord_flip(xlim = c(-max(data_descriptive_area$mean), 0)) +
-  scale_x_continuous(
-    # breaks = c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6),
-    expand = expansion(mult = c(0.1,0), add = 0),
-    labels = function(x) {
-      scales::percent(abs(x), 1)
-    }
-  ) +
-  scale_y_discrete(
-    labels = function(x) {
-      lapply(x, function(x) (str_split(str_to_title(x), "_"))[[1]][1])
-    }
-  ) +
-  labs(y = "Areas") +
-  theme(panel.spacing.y = unit(0, "mm"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank(),
-        axis.line.y = element_line(arrow = arrow(
-          angle = 20,
-          length = unit(.10, "inches"),
-          type = "closed",
-          ends = "first"
-        )),
-        axis.ticks.length.x = unit(0,units = "mm"),
-        axis.title.y = element_blank())
-
-label_x_bar_plot = ggplot(data.frame(l = "Proportion of benthic dives", 
-                                     x = 1, 
-                                     y = 1)) +
-  geom_text(aes(x, y, label = l, angle = 90)) +
-  theme(aspect.ratio = 10,
-        axis.title = element_blank(),
-        axis.text = element_blank(),
-        axis.ticks = element_blank()) +
-  theme_void()
+# inside_bar_plot = data_descriptive_area %>%
+#   mutate(
+#     mean = if_else(in_out == "outside", -mean, mean),
+#     sd = if_else(in_out == "outside", -sd, sd),
+#     se = if_else(in_out == "outside", -se, se)
+#   ) %>%
+#   filter(in_out == "inside") %>%
+#   ggplot(aes(x = mean, y = areas, fill = areas)) +
+#   facet_grid(in_out ~ ., scales = "free_y") +
+#   geom_col(show.legend = F) +
+#   scale_fill_manual(values = c("#9A6BEC", "#E66100", "#E1E826", "#004D40")) +
+#   new_scale_fill() +
+#   geom_col(
+#     show.legend = F,
+#     mapping = aes(
+#       x = mean,
+#       y = areas,
+#       fill = in_out),
+#     alpha = 0.3
+#   ) +
+#   scale_fill_manual(values = c("grey70")) +
+#   geom_errorbar(mapping = aes(xmin = -se,
+#                               xmax = se),
+#                 # reduce size of horizontal bar of the errorbar
+#                 width = 0.05) +
+#   coord_flip(xlim = c(0, max(data_descriptive_area$mean))) +
+#   scale_x_continuous(
+#     # breaks = c(-0.6,-0.4,-0.2, 0.2, 0.4, 0.6),
+#     expand = expansion(mult = c(0,0.1), add = 0),
+#     labels = function(x) {
+#       scales::percent(abs(x), 1)
+#     }
+#   ) +
+#   scale_y_discrete(
+#     labels = function(x) {
+#       lapply(x, function(x)
+#         (str_split(str_to_title(x), "_"))[[1]][1])
+#     }
+#   ) +
+#   theme(
+#     panel.spacing.y = unit(0, "mm"),
+#     panel.grid.major = element_blank(),
+#     panel.grid.minor = element_blank(),
+#     panel.background = element_blank(),
+#     axis.line.y = element_line(arrow = arrow(
+#       angle = 20,
+#       length = unit(.10, "inches"),
+#       type = "closed"
+#     )),
+#     axis.title = element_blank(),
+#     axis.ticks.length.x = unit(0, units = "mm"),
+#     axis.text.x = element_blank()
+#   )
+# 
+# outside_bar_plot = data_descriptive_area %>%
+#   mutate(
+#     mean = if_else(in_out == "outside",-mean, mean),
+#     sd = if_else(in_out == "outside",-sd, sd),
+#     se = if_else(in_out == "outside",-se, se)
+#   ) %>%
+#   filter(in_out == "outside") %>% 
+#   ggplot(aes(x = mean, y = areas, fill = areas)) +
+#   facet_grid(in_out ~ ., scales = "free_y") +
+#   geom_col(show.legend = F) +
+#   scale_fill_manual(values = c("#9A6BEC", "#E66100", "#E1E826", "#004D40")) +
+#   new_scale_fill() +
+#   geom_col(show.legend = F, mapping = aes(x = mean, 
+#                                           y = areas, 
+#                                           fill = in_out),
+#                                           alpha = 0.3) +
+#   scale_fill_manual(values = c("grey30")) +
+#   geom_errorbar(
+#     mapping = aes(
+#       xmin = -se,
+#       xmax = se
+#     ),
+#     # reduce size of horizontal bar of the errorbar
+#     width = 0.05
+#   ) +
+#   coord_flip(xlim = c(-max(data_descriptive_area$mean), 0)) +
+#   scale_x_continuous(
+#     # breaks = c(-0.6, -0.4, -0.2, 0.2, 0.4, 0.6),
+#     expand = expansion(mult = c(0.1,0), add = 0),
+#     labels = function(x) {
+#       scales::percent(abs(x), 1)
+#     }
+#   ) +
+#   scale_y_discrete(
+#     labels = function(x) {
+#       lapply(x, function(x) (str_split(str_to_title(x), "_"))[[1]][1])
+#     }
+#   ) +
+#   labs(y = "Areas") +
+#   theme(panel.spacing.y = unit(0, "mm"),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         panel.background = element_blank(),
+#         axis.line.y = element_line(arrow = arrow(
+#           angle = 20,
+#           length = unit(.10, "inches"),
+#           type = "closed",
+#           ends = "first"
+#         )),
+#         axis.ticks.length.x = unit(0,units = "mm"),
+#         axis.title.y = element_blank())
+# 
+# label_x_bar_plot = ggplot(data.frame(l = "Proportion of benthic dives", 
+#                                      x = 1, 
+#                                      y = 1)) +
+#   geom_text(aes(x, y, label = l, angle = 90)) +
+#   theme(aspect.ratio = 10,
+#         axis.title = element_blank(),
+#         axis.text = element_blank(),
+#         axis.ticks = element_blank()) +
+#   theme_void()
 ```
 
 ```{r}
@@ -1548,6 +1718,12 @@ df_kernel_dens_sf_kde_benthic <- st_kde(df_kernel_dens_sf_benthic,
                                 ) / 4)^2
 )
 
+# https://loading.io/color/feature/BuGn-9/
+cols <- c("99%" = "#ccece6", 
+          "95%" = "#99d8c9", 
+          "80%" = "#41ae76", 
+          "50%" = "#00441b")
+
 p1 <- trip_zoom_in +
   # remove legend
   guides(fill = 'none') +
@@ -1566,7 +1742,8 @@ p1 <- trip_zoom_in +
   # same colour bar
   # scale_fill_viridis_d(option = "magma", direction = -1) +
   # scale_fill_brewer(palette = "heat")
-  scale_fill_brewer(palette = "BuGn") +
+  # scale_fill_brewer(palette = "BuGn") +
+  scale_fill_manual(values = cols) +
   # scale_fill_grey() +
   # legend
   labs(fill = "Probs") +
@@ -1589,10 +1766,18 @@ p1 <- trip_zoom_in +
 leg1 <- gtable_filter(ggplot_gtable(ggplot_build(p1)), "guide-box")
 
 p2 <- trip_zoom_in +
-  # remove legend
+  # tweak legend
+  guides(fill = guide_legend(
+    override.aes = list(
+      colour = "grey60"
+  ))) +
   theme(
+    legend.key = element_rect(color="grey60"),
+    legend.text = element_text(colour = "grey20"),
+    legend.title = element_text(colour = "grey20"),
     legend.justification = c("right", "top"),
-    legend.position = c(0.99, 0.99)
+    legend.position = c(0.99, 0.99),
+    legend.background = element_rect(fill=alpha("white", 0))
   ) +
   labs(x = "Longitude", y = "Latitude") +
   # new scale
@@ -1610,7 +1795,8 @@ p2 <- trip_zoom_in +
   # same colour bar
   # scale_fill_viridis_d(option = "magma", direction = -1) +
   # scale_fill_brewer(palette = "heat")
-  scale_fill_brewer(palette = "BuGn") +
+  # scale_fill_brewer(palette = "BuGn") +
+  scale_fill_manual(values = cols) +
   # scale_fill_grey() +
   # remove legend
   guides(fill = 'none') +
@@ -1628,8 +1814,8 @@ p2 <- trip_zoom_in +
     crs = 4326
   ) +
   # color palette
-  scale_fill_manual(values = c("#E66100",  "#E1E826", "#9A6BEC")) +
-  scale_color_manual(values = c("#E66100",  "#E1E826", "#9A6BEC")) +
+  scale_fill_manual(values = c("darkred",  "#E1E826", "#E66100")) +
+  scale_color_manual(values = c("darkred",  "#E1E826", "#E66100")) +
   # remove legend for areas
   guides(fill = "none", col = "none") +
   # set limit from predator_map$layers[[1]]$data
@@ -1653,56 +1839,51 @@ p2$layers <- if (with_bathy) {
 }
 
 # convert into ggplot
-predator_map <- as_ggplot(arrangeGrob(
-  leg1,
-  p2,
-  heights = unit.c(leg1$height, unit(1, "npc") - leg1$height),
-  ncol = 1
-))
+predator_map <- as_ggplot(leg1) / p2 +
+  plot_layout(ncol = 1,
+              heights = c(1,12))
 ```
 
 ```{r fig-map-3}
+#| fig-cap: "Spatial overlap of benthic dives performed by northern elephant seals (n = 401), and the shark (yellow polygon) and orca (red polygon) distribution area along the west coast (adapted from Jorgenson, et al. 2019) with a kernel density estimation representing the occurrence of all the benthic dives."
+#| fig-width: 6
+
+predator_map
+```
+
+```{r fig-map-3-no-run}
 #| fig-cap: "Spatial overlap of benthic dives performed by northern elephant seals (n = 401), and the shark and orca distribution area. (A) displays orca (orange polygon) and shark (purple polygon) distribution area along the west coast (adapted from Jorgenson, et al. 2019) with a kernel density estimation representing the occurrence of all the benthic dives. (B) presents a bar plot quantifying the proportion of benthic dives occurring inside or outside of different habitat categories: Overlap (overlapping area of shark and orca habitats), Orca (only within orca habitat), Shark (only within shark habitat), and Total (combined area of shark and orca habitats)."
 #| fig-width: 7
 #| fig-asp: 1
+#| eval: false
 
-# layout
-layout <- "
-#AAAAAAAAAAAAAAAAAAAAAAA
-#AAAAAAAAAAAAAAAAAAAAAAA
-#AAAAAAAAAAAAAAAAAAAAAAA
-#AAAAAAAAAAAAAAAAAAAAAAA
-#AAAAAAAAAAAAAAAAAAAAAAA
-BCCCCCCCCCCCCCCCCCCCCCCC
-BDDDDDDDDDDDDDDDDDDDDDDD
-"
-
-# predator_map$layers[[length(predator_map$layers)]]$aes_params$fill_new_new = "white" #cdaa6d
-# predator_map$layers[[length(predator_map$layers)]]$aes_params$colour = "black"
-
-# display
-(predator_map + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
-  (label_x_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
-  (inside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
-  (outside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
-  plot_layout(design = layout) #+
-  #plot_annotation(tag_levels = list(c("A","","B","")))
+# # layout
+# layout <- "
+# #AAAAAAAAAAAAAAAAAAAAAAA
+# #AAAAAAAAAAAAAAAAAAAAAAA
+# #AAAAAAAAAAAAAAAAAAAAAAA
+# #AAAAAAAAAAAAAAAAAAAAAAA
+# #AAAAAAAAAAAAAAAAAAAAAAA
+# BCCCCCCCCCCCCCCCCCCCCCCC
+# BDDDDDDDDDDDDDDDDDDDDDDD
+# "
+# 
+# # predator_map$layers[[length(predator_map$layers)]]$aes_params$fill_new_new = "white" #cdaa6d
+# # predator_map$layers[[length(predator_map$layers)]]$aes_params$colour = "black"
+# 
+# # display
+# (predator_map + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+#   (label_x_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+#   (inside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+#   (outside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
+#   plot_layout(design = layout) #+
+#   #plot_annotation(tag_levels = list(c("A","","B","")))
 ```
 
 ::: callout-important
 ### Notes
 
--   Not sure about the bathymetry legend...
-
--   Considering this map is already a lot (in terms of information), do we still need the bottom graph?
-
--   Did we say we could remove the "Total" category from the bar plot?
-
--   TODO: If we keep the green as the color for benthic dives throughout the paper, then rework the green-color palette for the kernel (like darker green for 50%)
-
--   TODO: add annotation A), B)
-
--   TODO: work on the alignment
+-   ?
 :::
 
 ## Figure 4
@@ -1714,13 +1895,15 @@ bathy_prop <- data_dive %>%
   filter(bathy < 0) %>%
   # and remove outliers
   filter(bathy > -6000) %>%
+  # positive bathy
+  mutate(bathy = abs(bathy)) %>% 
   # create class of bathymetry
-  mutate(bathy_class = fct_rev(cut(
+  mutate(bathy_class = cut(
     bathy,
-    seq(-6000, 0, 400),
+    seq(0, 6000, 400),
     ordered_result = T,
     dig.lab = 4
-  ))) %>%
+  )) %>%
   # calculate by bath_class and animal
   group_by(bathy_class, DiveTypeName) %>%
   # the number of dives
@@ -1768,44 +1951,44 @@ bathy_prop <- data_dive %>%
     ))
   )
 
-# second plot
-bathy_hist <- data_dive %>%
-  # keep only negative bathy
-  filter(bathy < 0) %>%
-  # and remove outliers
-  filter(bathy > -6000) %>%
-  # create class of bathymetry
-  mutate(bathy_class = fct_rev(cut(
-    bathy,
-    seq(-6000, 0, 400),
-    ordered_result = T,
-    dig.lab = 4
-  ))) %>%
-  # calculate by bath_class and animal
-  group_by(bathy_class, DiveTypeName) %>%
-  # the number of dives
-  summarise(N = n(), .groups = "drop") %>%
-  # ggplot
-  ggplot(aes(
-    x = bathy_class,
-    y = N,
-    fill = DiveTypeName,
-    width = 0.5
-  )) +
-  geom_bar(
-    stat = "identity",
-    position = "dodge"
-  ) +
-  scale_fill_viridis(
-    option = "plasma",
-    discrete = T,
-    direction = -1
-  ) +
-  theme_void() +
-  theme(legend.position = "top")
-
-# the actual plot
-bath_plot <- bathy_hist / bathy_prop + plot_layout(heights = c(1, 10))
+# # second plot
+# bathy_hist <- data_dive %>%
+#   # keep only negative bathy
+#   filter(bathy < 0) %>%
+#   # and remove outliers
+#   filter(bathy > -6000) %>%
+#   # create class of bathymetry
+#   mutate(bathy_class = fct_rev(cut(
+#     bathy,
+#     seq(-6000, 0, 400),
+#     ordered_result = T,
+#     dig.lab = 4
+#   ))) %>%
+#   # calculate by bath_class and animal
+#   group_by(bathy_class, DiveTypeName) %>%
+#   # the number of dives
+#   summarise(N = n(), .groups = "drop") %>%
+#   # ggplot
+#   ggplot(aes(
+#     x = bathy_class,
+#     y = N,
+#     fill = DiveTypeName,
+#     width = 0.5
+#   )) +
+#   geom_bar(
+#     stat = "identity",
+#     position = "dodge"
+#   ) +
+#   scale_fill_viridis(
+#     option = "plasma",
+#     discrete = T,
+#     direction = -1
+#   ) +
+#   theme_void() +
+#   theme(legend.position = "top")
+# 
+# # the actual plot
+# bath_plot <- bathy_hist / bathy_prop + plot_layout(heights = c(1, 10))
 ```
 
 ```{r}
@@ -1847,7 +2030,7 @@ dist_coast_prop <- data_dive %>%
   ) +
   labs(
     x = "Distance from the coast (km)",
-    y = "Dive type proportion (%)"
+    y = "Dive type proportion"
   ) +
   scale_fill_viridis(
     "Dive Type",
@@ -1870,43 +2053,43 @@ dist_coast_prop <- data_dive %>%
     ))
   )
 
-# the second plot
-dist_coast_hist <- data_dive %>%
-  # filter out animal without dist_coast
-  filter(dist_coast > 0) %>%
-  # remove outliers
-  filter(dist_coast * 1000 * 111 <= 1900) %>%
-  # create class of bathymetry
-  mutate(dist_class = cut(
-    # convert decimal degree/1000
-    dist_coast * 1000 * 111,
-    seq(0, 2000, 100),
-    ordered_result = T,
-    dig.lab = 4
-  )) %>%
-  # calculate by bath_class and animal
-  group_by(dist_class, DiveTypeName) %>%
-  # the number of dives
-  summarise(N = n(), .groups = "drop") %>%
-  # ggplot
-  ggplot(aes(
-    x = dist_class,
-    y = N,
-    fill = DiveTypeName,
-    width = 0.5
-  )) +
-  geom_bar(
-    stat = "identity",
-    position = "dodge"
-  ) +
-  scale_fill_viridis(
-    option = "plasma",
-    discrete = T,
-    direction = -1
-  ) +
-  theme_void() +
-  theme(legend.position = "top")
-
+# # the second plot
+# dist_coast_hist <- data_dive %>%
+#   # filter out animal without dist_coast
+#   filter(dist_coast > 0) %>%
+#   # remove outliers
+#   filter(dist_coast * 1000 * 111 <= 1900) %>%
+#   # create class of bathymetry
+#   mutate(dist_class = cut(
+#     # convert decimal degree/1000
+#     dist_coast * 1000 * 111,
+#     seq(0, 2000, 100),
+#     ordered_result = T,
+#     dig.lab = 4
+#   )) %>%
+#   # calculate by bath_class and animal
+#   group_by(dist_class, DiveTypeName) %>%
+#   # the number of dives
+#   summarise(N = n(), .groups = "drop") %>%
+#   # ggplot
+#   ggplot(aes(
+#     x = dist_class,
+#     y = N,
+#     fill = DiveTypeName,
+#     width = 0.5
+#   )) +
+#   geom_bar(
+#     stat = "identity",
+#     position = "dodge"
+#   ) +
+#   scale_fill_viridis(
+#     option = "plasma",
+#     discrete = T,
+#     direction = -1
+#   ) +
+#   theme_void() +
+#   theme(legend.position = "top")
+# 
 # the actual plot
 # dist_coast_plot <- dist_coast_hist / dist_coast_prop + plot_layout(heights = c(1, 10))
 ```
@@ -1972,44 +2155,44 @@ dist_dep_prop <- data_dive %>%
     ))
   )
 
-# the second plot
-dist_dep_hist <- data_dive %>%
-  # filter out animal without dist_coast
-  filter(dist_coast > 0) %>%
-  # remove outliers
-  filter(dist_dep / 1000 < 4200) %>%
-  # create class of bathymetry
-  mutate(dist_class = cut(
-    dist_dep / 1000,
-    seq(0, 4200, 300),
-    ordered_result = T,
-    dig.lab = 4
-  )) %>%
-  # calculate by bath_class and animal
-  group_by(dist_class, DiveTypeName) %>%
-  # the number of dives
-  summarise(N = n(), .groups = "drop") %>%
-  # ggplot
-  ggplot(aes(
-    x = dist_class,
-    y = N,
-    fill = DiveTypeName,
-    width = 0.5
-  )) +
-  geom_bar(
-    stat = "identity",
-    position = "dodge"
-  ) +
-  scale_fill_viridis(
-    option = "plasma",
-    discrete = T,
-    direction = -1
-  ) +
-  theme_void() +
-  theme(legend.position = "top")
-
-# the actual plot
-dist_dep_plot <- dist_dep_hist / dist_dep_prop + plot_layout(heights = c(1, 10))
+# # the second plot
+# dist_dep_hist <- data_dive %>%
+#   # filter out animal without dist_coast
+#   filter(dist_coast > 0) %>%
+#   # remove outliers
+#   filter(dist_dep / 1000 < 4200) %>%
+#   # create class of bathymetry
+#   mutate(dist_class = cut(
+#     dist_dep / 1000,
+#     seq(0, 4200, 300),
+#     ordered_result = T,
+#     dig.lab = 4
+#   )) %>%
+#   # calculate by bath_class and animal
+#   group_by(dist_class, DiveTypeName) %>%
+#   # the number of dives
+#   summarise(N = n(), .groups = "drop") %>%
+#   # ggplot
+#   ggplot(aes(
+#     x = dist_class,
+#     y = N,
+#     fill = DiveTypeName,
+#     width = 0.5
+#   )) +
+#   geom_bar(
+#     stat = "identity",
+#     position = "dodge"
+#   ) +
+#   scale_fill_viridis(
+#     option = "plasma",
+#     discrete = T,
+#     direction = -1
+#   ) +
+#   theme_void() +
+#   theme(legend.position = "top")
+# 
+# # the actual plot
+# dist_dep_plot <- dist_dep_hist / dist_dep_prop + plot_layout(heights = c(1, 10))
 ```
 
 ```{r fig-area-plot-4}
@@ -2022,13 +2205,11 @@ bathy_prop$labels$y <- dist_coast_prop$labels$y <- dist_dep_prop$labels$y <-" "
 (guide_area() + bathy_prop + dist_coast_prop + dist_dep_prop) +
   plot_annotation(tag_levels = 'A') +
   plot_layout(nrow = 5, guides = "collect")
-grid::grid.draw(grid::textGrob(ylab, x = 0.05, y = 0.55, rot = 90))
+grid::grid.draw(grid::textGrob(ylab, x = 0.06, y = 0.55, rot = 90))
 ```
 
 ::: callout-important
 ### Notes
-
--   Conner, you seem confused by the negative values in the bathymetric data, should we convert them to positive values and explain that in the legend?
 
 -   TODO: change the color code to match the color we attributed to benthic dives (greens?)
 :::
@@ -2052,15 +2233,15 @@ prop_at_sea <- data_dive %>%
   group_by(nb_days_departure, id) %>%
   # count the total number of dives per day/seal
   mutate(nb_daily_dives = sum(nb_daily_dives_type)) %>%
-  # calculation of the proportion
-  mutate(prop = nb_daily_dives_type / nb_daily_dives) %>%
   # order by seals/date
   arrange(id, nb_days_departure) %>%
   # perform our calculation per seal
   group_by(id) %>%
   # calculate of the Proportion of time since departure
-  mutate(perc_time_at_sea = round(nb_days_departure / max(nb_days_departure) * 100, 1)) %>%
-  # focus on benthic dives
+  mutate(perc_time_at_sea = round(
+    nb_days_departure / max(nb_days_departure) * 100, 1)
+    ) %>%
+  # filter on benthic dives
   filter(DiveTypeName == "Benthic") %>%
   # add class of Proportion of time at sea
   mutate(day_class = cut(perc_time_at_sea, seq(0, 100, 5),
@@ -2079,16 +2260,17 @@ prop_at_sea <- data_dive %>%
     .,
     aes(x = day_class, y = prop_class)
   ) +
-  geom_bar(stat = "identity", fill = "grey", col = "grey30") +
+  geom_bar(stat = "identity", fill = "#008c49") +
   guides(x = guide_axis(angle = 45)) +
   scale_y_continuous(
-    breaks=seq(0,0.6,0.1),
+    limits = c(0, 1),
+    # breaks=seq(0,0.6,0.1),
     labels = function(x) {
       scales::percent(abs(x), 1)
     }
   ) +
   annotate("text", x = 5.3, y = 0.4, label = "Departure") +
-  annotate("text", x = 16, y = 0.5, label = "Arrival") +
+  annotate("text", x = 15, y = 0.5, label = "Arrival") +
   # geom_curve(
   #   data =   tibble(
   #     x1 = c(4, 17),
@@ -2112,7 +2294,7 @@ prop_at_sea <- data_dive %>%
       x1 = c(4),
       x2 = c(1),
       y1 = c(0.4),
-      y2 = c(0.31)
+      y2 = c(0.33)
     ),
     aes(
       x = x1,
@@ -2127,10 +2309,10 @@ prop_at_sea <- data_dive %>%
   ) +
   geom_curve(
     data =   tibble(
-      x1 = c(17),
-      x2 = c(20),
+      x1 = c(16),
+      x2 = c(19.7),
       y1 = c(0.5),
-      y2 = c(0.55)
+      y2 = c(0.57)
     ),
     aes(
       x = x1,
@@ -2141,7 +2323,7 @@ prop_at_sea <- data_dive %>%
     arrow = arrow(length = unit(0.08, "inch")),
     linewidth = 0.5,
     color = "gray20",
-    curvature = -0.55
+    curvature = -0.56
   ) +
   theme(panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
@@ -2168,7 +2350,7 @@ prop_at_sea
 ::: callout-important
 ### Notes
 
--   I don't have a strong opinion on arrival and departure annotations, so we can remove them if you think they are unnecessary!
+-   ?
 :::
 
 ## Supplementary
@@ -2271,7 +2453,7 @@ data_dive %>%
                "n_benthic_dives_proportion")
   ) %>%
   tab_spanner(
-    label = "% benthic dives",
+    label = "% Benthic dives",
     columns = c("n_benthic_dives_in_shark_proportion",
                 "n_benthic_dives_in_orca_proportion",
                 "n_benthic_dives_in_shark_or_orca",
@@ -2603,16 +2785,16 @@ data_plot %>%
   ) +
   labs(x = "Time",
        y = "Depth (m)") +
-  geom_text(data = data.frame(
-           xpos = median(data_plot$time),
-           ypos = 30,
-           hjustvar = 0,
-           vjustvar = 0,
-           annotateText = paste0("Corner index: ", round(unique(data_plot$corner_index),2),
-                        "\n",
-                        "Benthix index: ", round(unique(data_plot$benthic_index)),2)),
-            aes(x=xpos,y=ypos,hjust=hjustvar,
-                vjust=vjustvar,label=annotateText)) +
+  # geom_text(data = data.frame(
+  #          xpos = median(data_plot$time),
+  #          ypos = 30,
+  #          hjustvar = 0,
+  #          vjustvar = 0,
+  #          annotateText = paste0("Corner index: ", round(unique(data_plot$corner_index),2),
+  #                       "\n",
+  #                       "Benthix index: ", round(unique(data_plot$benthic_index)),2)),
+  #           aes(x=xpos,y=ypos,hjust=hjustvar,
+  #               vjust=vjustvar,label=annotateText)) +
   scale_x_datetime(position = "top") +
   labs(subtitle = "ID: 2011034 - Dive: 29")
 ```
