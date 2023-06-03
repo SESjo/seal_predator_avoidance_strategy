@@ -44,6 +44,7 @@ library(grid)
 library(viridis)
 library(ggnewscale)
 library(gridExtra)
+library(png)
 
 # table
 library(gt)
@@ -1300,7 +1301,7 @@ label_x <- ggplot(data.frame(l = "Time (hours)", x = 1, y = 1)) +
 ::: callout-important
 ### Note
 
--   TODO: right now the shaded area is arbitrary defined, by I'll compute the average sunset and sunrise time to be more accurate
+-   *n* = 403, because we removed individuals without location data (`filter(!is.na(Lat))`) 
 :::
 
 ```{r}
@@ -1846,9 +1847,32 @@ predator_map <- as_ggplot(leg1) / p2 +
 
 ```{r fig-map-3}
 #| fig-cap: "Spatial overlap of benthic dives performed by northern elephant seals (n = 401), and the shark (yellow polygon) and orca (red polygon) distribution area along the west coast (adapted from Jorgenson, et al. 2019) with a kernel density estimation representing the occurrence of all the benthic dives."
-#| fig-width: 6
+#| fig-width: 8
 
-predator_map
+# load image icon
+shark_img <- readPNG("../img/shark_custom.png", native = T)
+orca_img <- readPNG("../img/orca_custom.png", native = T)
+
+# draw the map
+predator_map +
+  inset_element(
+    p = orca_img,
+    left = 0.15,
+    bottom = 0.82,
+    right = 0.25,
+    top = 0.92
+  ) + 
+  theme(rect = element_rect(fill="transparent"),
+        plot.background = element_rect(color=NA)) +
+  inset_element(
+    p = shark_img,
+    left = 0.15,
+    bottom = 0.3,
+    right = 0.25,
+    top = 0.4
+  ) + 
+  theme(rect = element_rect(fill="transparent"),
+        plot.background = element_rect(color=NA))
 ```
 
 ```{r fig-map-3-no-run}
@@ -1884,13 +1908,27 @@ predator_map
 ### Notes
 
 -   ?
+-   *n* = 401, because we removed individuals without location data and those that do not have any benthic dives (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`) => it means that two individuals did not have any dives classified as benthic dives... (id = `2016014` and id = `2018002`)
 :::
 
 ## Figure 4
 
 ```{r}
+# https://mycolor.space/?hex=%23008C49&sub=1
+# build palette color
+cols_ind_1 <- c("#008c49", "#00c9d3", "#bffcfd", "#458081")
+# test for color blind
+# => https://davidmathlogic.com/colorblind/#%23008C49-%2300C9D3-%23BFFCFD-%23458081
+cols_ind_2 <- c("#008c49", "#002e00", "#00c9d3", "#deb887")
+# test for color blind 
+# => https://davidmathlogic.com/colorblind/#%23008C49-%23002E00-%2300C9D3-%23DEB887
+```
+
+```{r}
 # main plot
 bathy_prop <- data_dive %>%
+  # keep only rows with location data
+  filter(!is.na(Lat)) %>% 
   # keep only negative bathy
   filter(bathy < 0) %>%
   # and remove outliers
@@ -1930,13 +1968,14 @@ bathy_prop <- data_dive %>%
     x = "Bathymetry  (m)",
     y = "Dive type proportion (%)"
   ) +
-  scale_fill_viridis(
-    "Dive Type",
-    option = "plasma",
-    discrete = T,
-    direction = -1
-  ) +
-  # scale_fill_manual("Dive Type", values = c("#fcfdbf", "#fc8961", "#b73779", "#51127c"))
+  # scale_fill_viridis(
+  #   "Dive Type",
+  #   option = "plasma",
+  #   discrete = T,
+  #   direction = -1
+  # ) +
+  scale_fill_manual("Dive Type",
+                    values = cols_ind_1) +
   # position legend at the top
   theme(
     legend.position = "top",
@@ -1948,7 +1987,8 @@ bathy_prop <- data_dive %>%
       angle = 20,
       length = unit(.10, "inches"),
       type = "closed"
-    ))
+    )),
+    plot.tag.position = c(-0.03,1)
   )
 
 # # second plot
@@ -2032,13 +2072,14 @@ dist_coast_prop <- data_dive %>%
     x = "Distance from the coast (km)",
     y = "Dive type proportion"
   ) +
-  scale_fill_viridis(
-    "Dive Type",
-    option = "plasma",
-    discrete = T,
-    direction = -1
-  ) +
-  # scale_fill_manual("Dive Type", values = c("#fcfdbf", "#fc8961", "#b73779", "#51127c"))
+  # scale_fill_viridis(
+  #   "Dive Type",
+  #   option = "plasma",
+  #   discrete = T,
+  #   direction = -1
+  # ) +
+  scale_fill_manual("Dive Type",
+                    values = cols_ind_1) +
   # position legend at the top
   theme(
     legend.position = "none",
@@ -2050,7 +2091,8 @@ dist_coast_prop <- data_dive %>%
       angle = 20,
       length = unit(.10, "inches"),
       type = "closed"
-    ))
+    )),
+    plot.tag.position = c(-0.03,1)
   )
 
 # # the second plot
@@ -2134,13 +2176,14 @@ dist_dep_prop <- data_dive %>%
     x = "Distance from departure (km)",
     y = "Dive type proportion"
   ) +
-  scale_fill_viridis(
-    "Dive Type",
-    option = "plasma",
-    discrete = T,
-    direction = -1
-  ) +
-  # scale_fill_manual("Dive Type", values = c("#fcfdbf", "#fc8961", "#b73779", "#51127c"))
+  # scale_fill_viridis(
+  #   "Dive Type",
+  #   option = "plasma",
+  #   discrete = T,
+  #   direction = -1
+  # ) +
+  scale_fill_manual("Dive Type",
+                    values = cols_ind_1) +
   # position legend at the top
   theme(
     legend.position = "none",
@@ -2152,7 +2195,8 @@ dist_dep_prop <- data_dive %>%
       angle = 20,
       length = unit(.10, "inches"),
       type = "closed"
-    ))
+    )),
+    plot.tag.position = c(-0.03,1)
   )
 
 # # the second plot
@@ -2195,23 +2239,29 @@ dist_dep_prop <- data_dive %>%
 # dist_dep_plot <- dist_dep_hist / dist_dep_prop + plot_layout(heights = c(1, 10))
 ```
 
+```{r}
+# y axis label position
+ylab <- bathy_prop$labels$y
+bathy_prop$labels$y <- dist_coast_prop$labels$y <- dist_dep_prop$labels$y <-" "
+```
+
 ```{r fig-area-plot-4}
 #| fig-cap: "Proportion of each dive type performed by northern elephant seals in relation to (A) bathymetry, (B) distance from the coast, and (C) distance from departure (defined as the first recorded location)."
 #| fig-height: 9
 
 # display
-ylab <- bathy_prop$labels$y
-bathy_prop$labels$y <- dist_coast_prop$labels$y <- dist_dep_prop$labels$y <-" "
 (guide_area() + bathy_prop + dist_coast_prop + dist_dep_prop) +
+  theme(plot.margin = unit(c(0,.02,-1,.05),units = "npc")) +
   plot_annotation(tag_levels = 'A') +
   plot_layout(nrow = 5, guides = "collect")
-grid::grid.draw(grid::textGrob(ylab, x = 0.06, y = 0.55, rot = 90))
+grid::grid.draw(grid::textGrob(ylab, x = 0.07, y = 0.55, rot = 90))
 ```
 
 ::: callout-important
 ### Notes
 
 -   TODO: change the color code to match the color we attributed to benthic dives (greens?)
+-   *n* = 403, because we removed individuals without location data (`filter(!is.na(Lat))`)
 :::
 
 ## Figure 5
@@ -2351,6 +2401,7 @@ prop_at_sea
 ### Notes
 
 -   ?
+-   *n* = 422, because we removed individuals that do not have any benthic dives (*i.e.* we keep only those having benthic dives, `filter(DiveTypeName == "Benthic")`) => it means that two individuals did not have any dives classified as benthic dives... (id = `2016014` and id = `2018002`)
 :::
 
 ## Supplementary
@@ -2741,6 +2792,122 @@ to_plot
 
 -   lmk!
 :::
+
+
+### Figure 2
+
+```{r}
+# the last plot
+prop_at_sea_trip <- data_dive %>%
+  group_by(id, trip) %>%
+  # time difference between the first date and the others (telling R to take diff b/w first date and all other dates)
+  mutate(nb_days_departure = trunc(as.numeric(difftime(
+    date, first(date),
+    units = "days"
+  )))) %>%
+  # group by day/dive_type/seal
+  group_by(nb_days_departure, DiveTypeName, id, trip) %>%
+  # count number of dives
+  summarise(nb_daily_dives_type = n(), .groups = "drop") %>%
+  # group by day/seal
+  group_by(nb_days_departure, id) %>%
+  # count the total number of dives per day/seal
+  mutate(nb_daily_dives = sum(nb_daily_dives_type)) %>%
+  # order by seals/date
+  arrange(id, nb_days_departure, trip) %>%
+  # perform our calculation per seal
+  group_by(id, trip) %>%
+  # calculate of the Proportion of time since departure
+  mutate(perc_time_at_sea = round(
+    nb_days_departure / max(nb_days_departure) * 100, 1)
+    ) %>%
+  # filter on benthic dives
+  filter(DiveTypeName == "Benthic") %>%
+  # add class of Proportion of time at sea
+  mutate(day_class = cut(perc_time_at_sea, seq(0, 100, 5),
+                         include.lowest = T
+  )) %>%
+  # by class of Proportion of time at sea
+  group_by(day_class, trip) %>%
+  # calculate the proportion of daily benthic dives
+  summarise(
+    nb_benthic_class = sum(nb_daily_dives_type),
+    nb_total_class = sum(nb_daily_dives),
+    prop_class = nb_benthic_class / nb_total_class
+  ) %>%
+  # plot
+  ggplot(
+    .,
+    aes(x = day_class, y = prop_class)
+  ) +
+  geom_bar(stat = "identity", fill = "#008c49") +
+  guides(x = guide_axis(angle = 45)) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    # breaks=seq(0,0.6,0.1),
+    labels = function(x) {
+      scales::percent(abs(x), 1)
+    }
+  ) +
+  facet_wrap(.~trip) +
+  # annotate("text", x = 5.3, y = 0.4, label = "Departure") +
+  # annotate("text", x = 15, y = 0.5, label = "Arrival") +
+  # geom_curve(
+  #   data =   tibble(
+  #     x1 = c(4),
+  #     x2 = c(1),
+  #     y1 = c(0.4),
+  #     y2 = c(0.33)
+  #   ),
+  #   aes(
+  #     x = x1,
+  #     y = y1,
+  #     xend = x2,
+  #     yend = y2
+  #   ),
+  #   arrow = arrow(length = unit(0.08, "inch")),
+  #   linewidth = 0.5,
+  #   color = "gray20",
+  #   curvature = 0.3
+  # ) +
+  # geom_curve(
+  #   data =   tibble(
+  #     x1 = c(16),
+  #     x2 = c(19.7),
+  #     y1 = c(0.5),
+  #     y2 = c(0.57)
+  #   ),
+  #   aes(
+  #     x = x1,
+  #     y = y1,
+  #     xend = x2,
+  #     yend = y2
+  #   ),
+  #   arrow = arrow(length = unit(0.08, "inch")),
+  #   linewidth = 0.5,
+  #   color = "gray20",
+  #   curvature = -0.56
+  # ) +
+  theme(panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(arrow = arrow(
+      angle = 20,
+      length = unit(.10, "inches"),
+      type = "closed"
+    ))
+  ) +
+  labs(
+    x = "Time spent at sea (%)",
+    y = "Proportion of benthic dives"
+  )
+```
+```{r fig-prop-suppmat-2}
+#| fig-cap: "Proportion of benthic dives performed during trip at sea expressed as a percentage of time spent at sea during post breeding and post molting trip. Time spent at sea is classified into intervals of five percent for graphical representation."
+#| fig-height: 3
+# display
+prop_at_sea_trip
+```
 
 ## Extra
 
