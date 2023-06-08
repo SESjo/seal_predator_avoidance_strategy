@@ -1065,12 +1065,14 @@ windrose_departure_pm <- data_windrose %>%
            grid = c(5, 10, 15), 
            facet_wrap = "origin",
            hour_sunrise = data_windrose %>%
-             filter(DiveNumber == 1 &
+             group_by(id) %>% 
+             filter(date_tz == min(date_tz) &
                       trip == "Post Molting") %>% 
              pull(h_sunrise) %>% 
              median(.), 
            hour_sunset = data_windrose %>%
-             filter(DiveNumber == 1 &
+             group_by(id) %>% 
+             filter(date_tz == min(date_tz) &
                       trip == "Post Molting") %>% 
              pull(h_sunset) %>% 
              median(.)) +
@@ -1097,12 +1099,14 @@ windrose_departure_pb <- data_windrose %>%
   windrose(., 
            grid = c(5, 10, 15),
            hour_sunrise = data_windrose %>%
-             filter(DiveNumber == 1 &
+             group_by(id) %>% 
+             filter(date_tz == min(date_tz) &
                       trip == "Post Breeding") %>% 
              pull(h_sunrise) %>% 
              median(.), 
            hour_sunset = data_windrose %>%
-             filter(DiveNumber == 1 &
+             group_by(id) %>% 
+             filter(date_tz == min(date_tz) &
                       trip == "Post Breeding") %>% 
              pull(h_sunset) %>% 
              median(.)) +
@@ -1131,11 +1135,13 @@ windrose_arrival_pm <- data_windrose %>%
            legend_position = "top",
            facet_grid = T,
            hour_sunrise = data_windrose %>%
+             group_by(id) %>% 
              filter(date_tz == max(date_tz) &
                       trip == "Post Molting") %>% 
              pull(h_sunrise) %>% 
              median(.), 
            hour_sunset = data_windrose %>%
+             group_by(id) %>% 
              filter(date_tz == max(date_tz) &
                       trip == "Post Molting") %>% 
              pull(h_sunset) %>% 
@@ -1162,11 +1168,13 @@ windrose_arrival_pb <- data_windrose %>%
            legend_position = "top",
            facet_wrap = "trip",
            hour_sunrise = data_windrose %>%
+             group_by(id) %>% 
              filter(date_tz == max(date_tz) &
                       trip == "Post Breeding") %>% 
              pull(h_sunrise) %>% 
              median(.), 
            hour_sunset = data_windrose %>%
+             group_by(id) %>% 
              filter(date_tz == max(date_tz) &
                       trip == "Post Breeding") %>% 
              pull(h_sunset) %>% 
