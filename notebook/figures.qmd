@@ -521,18 +521,12 @@ table_1_b <- data_dive %>%
                                                 length(DiveNumber[DiveTypeName == "Benthic" &
                                                                     shark_or_orca == 1 &
                                                                     !is.na(Lat)])),
-    hour_day_departure = ifelse(length(id[DiveTypeName == "Benthic"]) == 0,
-                                NA_real_,
-                                first(as.numeric(
-                                  format(date_tz[DiveTypeName == "Benthic"],
-                                         format = "%H")
-                                ))),
-    hour_day_arrival = ifelse(length(id[DiveTypeName == "Benthic"]) == 0,
-                              NA_real_,
-                              last(as.numeric(
-                                format(date_tz[DiveTypeName == "Benthic"],
-                                       format = "%H")
-                              ))),
+    hour_day_departure = first(hour(date_tz) +
+                                 minute(date_tz) / 60 +
+                                 second(date_tz) / (60 * 60)),
+    hour_day_arrival = last(hour(date_tz) +
+                              minute(date_tz) / 60 +
+                              second(date_tz) / (60 * 60)),
     .groups = "drop"
   ) %>%
   group_by(trip) %>%
@@ -1027,118 +1021,28 @@ data_windrose <- data_dive %>%
   group_by(id) %>%
   # keep only the first, last date, but also all benthic dives
   filter(date == min(date) |
-           date == max(date) |
-           DiveTypeName == "Benthic") %>% 
+           date == max(date)) %>% 
   # ungroup 
   ungroup() %>% 
   # change colnames to make getSunlightTimes works
-  mutate(
-    date = as.Date(date_tz), 
-    lat = Lat,
-    lon = Long) %>% 
+  mutate(date = as.Date(date_tz),
+         lat = Lat,
+         lon = Long) %>%
   # calculate hour of sunset and hour of sunrise
-  mutate(
-    getSunlightTimes(data = .,
-                     keep = c("sunrise", "sunset"),
-                     tz = tz_lookup_coords(lat = Lat,
-                                lon = Long,
-                                method = "accurate"))
-  ) %>% 
+  mutate(getSunlightTimes(
+    data = .,
+    keep = c("sunrise", "sunset"),
+    tz = tz_lookup_coords(lat = Lat,
+                          lon = Long,
+                          method = "accurate")
+  )) %>%
   # extract hours of sunset an sunrise
-  mutate(
-    h_sunrise = hour(sunrise),
-    h_sunset = hour(sunset)
-  )
-```
-
-```{r}
-hour_time_2_radian <- function(x, high = 24, low = 0){
-  # https://pingouin-stats.org/build/html/generated/pingouin.convert_angles.html#pingouin.convert_angles
-  ptp = high - low
-  rad = x * (2 * pi)/ptp
-  rad = (rad + pi) %% (2 * pi) - pi
-  return(rad)
-}
-```
-
-```{r}
-# departure
-test_departure_pm = CircStats::r.test(
-  data_windrose %>%
-      group_by(id) %>%
-      filter(DiveNumber == 1 & trip == "Post Molting") %>%
-      mutate(time = hour(date_tz) +
-               minute(date_tz)/60 +
-               second(date_tz)/(60*60)) %>%
-    pull(time) %>%
-    hour_time_2_radian(.))
-test_departure_pb = CircStats::r.test(
-  data_windrose %>%
-      group_by(id) %>%
-      filter(DiveNumber == 1 & trip == "Post Breeding") %>%
-      mutate(time = hour(date_tz) +
-               minute(date_tz)/60 +
-               second(date_tz)/(60*60)) %>%
-    pull(time) %>%
-    hour_time_2_radian(.))
-
-# arrival
-test_arrival_pm = r.test(conversion.circular(
-  circular(
-    data_windrose %>%
-      group_by(id) %>%
-      filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
-      mutate(time = hour(date_tz) +
-               minute(date_tz)/60 +
-               second(date_tz)/(60*60)) %>% pull(time),
-    units = "hours"
-  ),
-  units = "radians"
-))
-test_arrival_pb = r.test(conversion.circular(
-  circular(
-    data_windrose %>%
-      group_by(id) %>%
-      filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
-      mutate(time = hour(date_tz) +
-               minute(date_tz)/60 +
-               second(date_tz)/(60*60)) %>% pull(time),
-    units = "hours"
-  ),
-  units = "radians"
-))
-
-# # benthic
-# test_benthic = r.test(conversion.circular(
-#   circular(
-#     data_windrose %>%
-#       group_by(id) %>%
-#       filter(DiveTypeName == "Benthic") %>%
-#       mutate(time = hour(date_tz) +
-#                minute(date_tz)/60 +
-#                second(date_tz)/(60*60)) %>%
-#       pull(time),
-#     units = "hours"
-#   ),
-#   units = "radians"
-# ))
-
-# convert back to hours
-conversion.circular(circular(test_departure_pm$r.bar,
-                             units = "radians"),
-                    units = "hours")
-conversion.circular(circular(test_departure_pb$r.bar,
-                             units = "radians"),
-                    units = "hours")
-conversion.circular(circular(test_arrival_pm$r.bar,
-                             units = "radians"),
-                    units = "hours")
-conversion.circular(circular(test_arrival_pb$r.bar,
-                             units = "radians"),
-                    units = "hours")
-# conversion.circular(circular(test_benthic$r.bar,
-#                              units = "rad"),
-#                     units = "hours")
+  mutate(h_sunrise = round(hour(sunrise) +
+               minute(sunrise)/60 +
+               second(sunrise)/(60*60)),
+         h_sunset = round(hour(sunset) +
+               minute(sunset)/60 +
+               second(sunset)/(60*60)))
 ```
 
 ```{r fig-windrose-1}
@@ -1152,7 +1056,7 @@ conversion.circular(circular(test_arrival_pb$r.bar,
 # for departure
 windrose_departure_pm <- data_windrose %>%
   group_by(id) %>%
-  filter(DiveNumber == 1 & trip == "Post Molting") %>%
+  filter(date_tz == min(date_tz) & trip == "Post Molting") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
@@ -1185,7 +1089,7 @@ windrose_departure_pm <- data_windrose %>%
 
 windrose_departure_pb <- data_windrose %>%
   group_by(id) %>%
-  filter(DiveNumber == 1 & trip == "Post Breeding") %>%
+  filter(date_tz == min(date_tz) & trip == "Post Breeding") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
@@ -1301,32 +1205,32 @@ label_x <- ggplot(data.frame(l = "Time (hours)", x = 1, y = 1)) +
 ::: callout-important
 ### Note
 
--   *n* = 403, because we removed individuals without location data (`filter(!is.na(Lat))`) 
+-   *n* = 403, because we removed individuals without location data (`filter(!is.na(Lat))`)
 :::
 
 ```{r}
 # departure PM
-psych::circadian.mean(
+pm_dep_mean = psych::circadian.mean(
   data_windrose %>%
     group_by(id) %>%
-    filter(DiveNumber == 1 & trip == "Post Molting") %>%
+    filter(date_tz == min(date_tz) & trip == "Post Molting") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
 )
 
 # departure PB
-psych::circadian.mean(
+pb_dep_mean = psych::circadian.mean(
   data_windrose %>%
     group_by(id) %>%
-    filter(DiveNumber == 1 & trip == "Post Breeding") %>%
+    filter(date_tz == min(date_tz) & trip == "Post Breeding") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
 )
 
 # arrival PM
-psych::circadian.mean(
+pm_arr_mean = psych::circadian.mean(
   data_windrose %>%
     group_by(id) %>%
     filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
@@ -1336,7 +1240,7 @@ psych::circadian.mean(
 )
 
 # arrival PB
-psych::circadian.mean(
+pb_arr_mean = psych::circadian.mean(
   data_windrose %>%
     group_by(id) %>%
     filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
@@ -1345,6 +1249,125 @@ psych::circadian.mean(
              second(date_tz) / (60 * 60)) %>% pull(time)
 )
 ```
+
+```{r}
+# functio to convert time in radian (probably already exist in some package...)
+hour_time_2_radian <- function(x, high = 24, low = 0){
+  # https://pingouin-stats.org/build/html/generated/pingouin.convert_angles.html#pingouin.convert_angles
+  ptp = high - low
+  rad = x * (2 * pi)/ptp
+  rad = (rad + pi) %% (2 * pi) - pi
+  return(rad)
+}
+```
+
+```{r}
+# departure
+test_departure_pm = CircStats::r.test(
+  data_windrose %>%
+      group_by(id) %>%
+      filter(date_tz == min(date_tz) & trip == "Post Molting") %>%
+      mutate(time = hour(date_tz) +
+               minute(date_tz)/60 +
+               second(date_tz)/(60*60)) %>%
+    pull(time) %>%
+    hour_time_2_radian(.))
+test_departure_pb = CircStats::r.test(
+  data_windrose %>%
+      group_by(id) %>%
+      filter(date_tz == min(date_tz) & trip == "Post Breeding") %>%
+      mutate(time = hour(date_tz) +
+               minute(date_tz)/60 +
+               second(date_tz)/(60*60)) %>%
+    pull(time) %>%
+    hour_time_2_radian(.))
+
+# arrival
+test_arrival_pm = CircStats::r.test(
+  data_windrose %>%
+      group_by(id) %>%
+      filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
+      mutate(time = hour(date_tz) +
+               minute(date_tz)/60 +
+               second(date_tz)/(60*60)) %>%
+    pull(time) %>%
+    hour_time_2_radian(.))
+test_arrival_pb = CircStats::r.test(
+    data_windrose %>%
+      group_by(id) %>%
+      filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
+      mutate(time = hour(date_tz) +
+               minute(date_tz)/60 +
+               second(date_tz)/(60*60)) %>%
+    pull(time) %>%
+    hour_time_2_radian(.))
+```
+
+```{r tbl-no-include}
+#| tbl-cap: (Not meant to be in the paper) Average hour of departure and arrival for post breeding and post molting trip with the result of the associated Rayleigh test.
+
+data.frame(
+  Departure = c(
+    paste0(
+      round(pb_dep_mean, 1),
+      " (R = ",
+      round(test_departure_pb$r.bar, 2),
+      ", p-value ",
+      ifelse(
+        round(test_departure_pb$p.value, 2) == 0,
+        "< 0.001",
+        paste("= ", round(test_departure_pb$p.value, 2))
+      ),
+      ")"
+    ),
+    paste0(
+      round(pm_dep_mean, 1),
+      " (R = ",
+      round(test_departure_pm$r.bar, 2),
+      ", p-value ",
+      ifelse(
+        round(test_departure_pm$p.value, 2) == 0,
+        "< 0.001",
+        paste("= ", round(test_departure_pm$p.value, 2))
+      ),
+      ")"
+    )
+  ),
+    Arrival = c(
+    paste0(
+      round(pb_arr_mean, 1),
+      " (R = ",
+      round(test_arrival_pb$r.bar, 2),
+      ", p-value ",
+      ifelse(
+        round(test_arrival_pb$p.value, 2) == 0,
+        "< 0.001",
+        paste("= ", round(test_arrival_pb$p.value, 2))
+      ),
+      ")"
+    ),
+    paste0(
+      round(pm_arr_mean, 1),
+      " (R = ",
+      round(test_arrival_pm$r.bar, 2),
+      ", p-value ",
+      ifelse(
+        round(test_arrival_pm$p.value, 2) == 0,
+        "< 0.001",
+        paste("= ", round(test_arrival_pm$p.value, 2))
+      ),
+      ")"
+    )
+  ),
+  rownames = c("Post Breeding", "Post Molting")) %>%
+  gt(rowname_col = "rownames") %>% 
+  cols_label(
+    Arrival = "Hour of Arrival",
+    Departure = "Hour of Departure"
+  )
+```
+
+> Good ressource to interpret Rayleigh test: [https://stats.stackexchange.com/questions/433396/interpretation-of-rayleigh-test-results](https://stats.stackexchange.com/questions/433396/interpretation-of-rayleigh-test-results)
 
 ## Figure 3
 
@@ -1908,7 +1931,7 @@ predator_map +
 ### Notes
 
 -   ?
--   *n* = 401, because we removed individuals without location data and those that do not have any benthic dives (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`) => it means that two individuals did not have any dives classified as benthic dives... (id = `2016014` and id = `2018002`)
+-   *n* = 401, because we removed individuals without location data and those that do not have any benthic dives (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`) =\> it means that two individuals did not have any dives classified as benthic dives... (id = `2016014` and id = `2018002`)
 :::
 
 ## Figure 4
@@ -2401,7 +2424,7 @@ prop_at_sea
 ### Notes
 
 -   ?
--   *n* = 422, because we removed individuals that do not have any benthic dives (*i.e.* we keep only those having benthic dives, `filter(DiveTypeName == "Benthic")`) => it means that two individuals did not have any dives classified as benthic dives... (id = `2016014` and id = `2018002`)
+-   *n* = 422, because we removed individuals that do not have any benthic dives (*i.e.* we keep only those having benthic dives, `filter(DiveTypeName == "Benthic")`) =\> it means that two individuals did not have any dives classified as benthic dives... (id = `2016014` and id = `2018002`)
 :::
 
 ## Supplementary
@@ -2793,7 +2816,6 @@ to_plot
 -   lmk!
 :::
 
-
 ### Figure 2
 
 ```{r}
@@ -2902,6 +2924,7 @@ prop_at_sea_trip <- data_dive %>%
     y = "Proportion of benthic dives"
   )
 ```
+
 ```{r fig-prop-suppmat-2}
 #| fig-cap: "Proportion of benthic dives performed during trip at sea expressed as a percentage of time spent at sea during post breeding and post molting trip. Time spent at sea is classified into intervals of five percent for graphical representation."
 #| fig-height: 3
