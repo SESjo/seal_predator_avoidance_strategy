@@ -1108,9 +1108,9 @@ data_windrose <- data_dive %>%
 # https://campus.datacamp.com/courses/fraud-detection-in-r/introduction-motivation?ex=4
 
 # for departure
-windrose_departure_pm <- data_windrose %>%
+windrose_departure_pb <- data_windrose %>%
   group_by(id) %>%
-  filter(date_tz == min(date_tz) & trip == "Post Molting") %>%
+  filter(date_tz == min(date_tz) & trip == "Post Breeding") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
@@ -1121,13 +1121,13 @@ windrose_departure_pm <- data_windrose %>%
            hour_sunrise = data_windrose %>%
              group_by(id) %>% 
              filter(date_tz == min(date_tz) &
-                      trip == "Post Molting") %>% 
+                      trip == "Post Breeding") %>% 
              pull(h_sunrise) %>% 
              median(.), 
            hour_sunset = data_windrose %>%
              group_by(id) %>% 
              filter(date_tz == min(date_tz) &
-                      trip == "Post Molting") %>% 
+                      trip == "Post Breeding") %>% 
              pull(h_sunset) %>% 
              median(.)) +
   theme(axis.title = element_blank(),
@@ -1143,9 +1143,9 @@ windrose_departure_pm <- data_windrose %>%
   aes(x = x, y = y, label = text),
   size = 2)
 
-windrose_departure_pb <- data_windrose %>%
+windrose_departure_pm <- data_windrose %>%
   group_by(id) %>%
-  filter(date_tz == min(date_tz) & trip == "Post Breeding") %>%
+  filter(date_tz == min(date_tz) & trip == "Post Molting") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
@@ -1155,13 +1155,13 @@ windrose_departure_pb <- data_windrose %>%
            hour_sunrise = data_windrose %>%
              group_by(id) %>% 
              filter(date_tz == min(date_tz) &
-                      trip == "Post Breeding") %>% 
+                      trip == "Post Molting") %>% 
              pull(h_sunrise) %>% 
              median(.), 
            hour_sunset = data_windrose %>%
              group_by(id) %>% 
              filter(date_tz == min(date_tz) &
-                      trip == "Post Breeding") %>% 
+                      trip == "Post Molting") %>% 
              pull(h_sunset) %>% 
              median(.)) +
   theme(axis.title = element_blank(),
@@ -1178,9 +1178,9 @@ windrose_departure_pb <- data_windrose %>%
   # size = 2)
 
 # for arrival
-windrose_arrival_pm <- data_windrose %>%
+windrose_arrival_pb <- data_windrose %>%
   group_by(id) %>%
-  filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
+  filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
@@ -1191,13 +1191,13 @@ windrose_arrival_pm <- data_windrose %>%
            hour_sunrise = data_windrose %>%
              group_by(id) %>% 
              filter(date_tz == max(date_tz) &
-                      trip == "Post Molting") %>% 
+                      trip == "Post Breeding") %>% 
              pull(h_sunrise) %>% 
              median(.), 
            hour_sunset = data_windrose %>%
              group_by(id) %>% 
              filter(date_tz == max(date_tz) &
-                      trip == "Post Molting") %>% 
+                      trip == "Post Breeding") %>% 
              pull(h_sunset) %>% 
              median(.)) +
   theme(axis.title = element_blank(),
@@ -1211,9 +1211,9 @@ windrose_arrival_pm <- data_windrose %>%
   # aes(x = x, y = y, label = text),
   # size = 2)
 
-windrose_arrival_pb <- data_windrose %>%
+windrose_arrival_pm <- data_windrose %>%
   group_by(id) %>%
-  filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
+  filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n(), .groups = "drop") %>%
@@ -1224,13 +1224,13 @@ windrose_arrival_pb <- data_windrose %>%
            hour_sunrise = data_windrose %>%
              group_by(id) %>% 
              filter(date_tz == max(date_tz) &
-                      trip == "Post Breeding") %>% 
+                      trip == "Post Molting") %>% 
              pull(h_sunrise) %>% 
              median(.), 
            hour_sunset = data_windrose %>%
              group_by(id) %>% 
              filter(date_tz == max(date_tz) &
-                      trip == "Post Breeding") %>% 
+                      trip == "Post Molting") %>% 
              pull(h_sunset) %>% 
              median(.)) +
   theme(axis.title = element_blank(),
@@ -1250,8 +1250,8 @@ label_x <- ggplot(data.frame(l = "Time (hours)", x = 1, y = 1)) +
       coord_cartesian(clip = "off")
 
 # combine all
-(windrose_departure_pm + windrose_arrival_pm) /
-  (windrose_departure_pb + windrose_arrival_pb) /
+(windrose_departure_pb + windrose_arrival_pb) /
+  (windrose_departure_pm + windrose_arrival_pm) /
   label_x +
   theme(plot.margin = unit(c(0,0,0,0), "cm")) +
   plot_layout(
@@ -2492,9 +2492,15 @@ prop_at_sea
 -   *n* = 422
 :::
 
+Test to compare if the proportion of benthic dives at arrival is higher than the one at departure:
+
+* $ H_{0}: p_{departure} \ge p_{arrival} $
+* $ H_{1}: p_{departure} \lt p_{arrival} $
+
+
 ```{r}
 # test to compare the proportion between arrival and departure
-broom::tidy(prop.test(x = c(prop_at_sea_dt %>% 
+prop.test(x = c(prop_at_sea_dt %>% 
                   filter(day_class == first(day_class)) %>% 
                   pull(nb_benthic_class), 
                 prop_at_sea_dt %>% 
@@ -2505,9 +2511,11 @@ broom::tidy(prop.test(x = c(prop_at_sea_dt %>%
                   pull(nb_total_class), 
                 prop_at_sea_dt %>% 
                   filter(day_class == last(day_class)) %>% 
-                  pull(nb_total_class))))
+                  pull(nb_total_class)),
+          alternative = "less")
 ```
 
+> $$ H_{0} is rejected, so we can say that the porportion of benthic dives at arrival is significantly superior than departure!
 
 > Based on: [http://www.sthda.com/english/wiki/comparing-proportions-in-r](http://www.sthda.com/english/wiki/comparing-proportions-in-r)
 
