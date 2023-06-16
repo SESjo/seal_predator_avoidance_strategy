@@ -259,6 +259,10 @@ data_dive <- readRDS("../export/data_dive.rds")
 # filter on seals departing from ANNU
 data_dive <- data_dive %>%
   filter(DepartureLocation == "ANNU")
+
+# remove id == `2016014` and id = `2018002` (no benthic dives)
+data_dive <- data_dive %>% 
+  filter(!id %in% c("2016014", "2018002"))
 ```
 
 ```{r}
@@ -661,6 +665,56 @@ table_1_b
 -   Table 2: Individual-level summary of dataset characteristics for Post Breeding and Post Molting foraging trips in northern elephant seals
 :::
 
+
+
+
+```{r}
+# get the hours of departure and arrival
+hour_data <- data_dive %>%
+  group_by(trip, id) %>%
+  summarise(
+    hour_day_departure = first(hour(date_tz) +
+                                 minute(date_tz) / 60 +
+                                 second(date_tz) / (60 * 60)),
+    hour_day_arrival = last(hour(date_tz) +
+                              minute(date_tz) / 60 +
+                              second(date_tz) / (60 * 60)),
+    .groups = "drop"
+  ) %>% 
+  filter(!is.na(hour_day_departure) & !is.na(hour_day_arrival))
+
+# compare the circular mean hour of departure between two types of trip
+watson.williams.test(
+  list(
+    pb = hour_data %>% 
+         filter(trip == "Post Breeding") %>% 
+         pull(hour_day_departure) %>% 
+         circular(., units = "hours"),
+    pm = hour_data %>% 
+         filter(trip == "Post Molting") %>% 
+         pull(hour_day_departure) %>% 
+         circular(., units = "hours"))
+)
+```
+
+```{r}
+watson.wheeler.test(
+  list(
+    pb = hour_data %>% 
+         filter(trip == "Post Breeding") %>% 
+         pull(hour_day_departure) %>% 
+         circular(., units = "hours"),
+    pm = hour_data %>% 
+         filter(trip == "Post Molting") %>% 
+         pull(hour_day_departure) %>% 
+         circular(., units = "hours"))
+)
+```
+
+
+> More here: [https://stats.stackexchange.com/questions/265865/comparisons-of-circular-means](https://stats.stackexchange.com/questions/265865/comparisons-of-circular-means)
+
+
 ## Figure 1
 
 Individual are not chosen completely randomly, we picked randomly individuals that performed \~180 dives per 36h.
@@ -884,11 +938,11 @@ departure_dp <- data_plot %>%
     labels = c("+6h", "+12h", "+18h", "+24h", "+30h"),
     position = "top"
   ) +
-  scale_y_reverse() +
+  scale_y_reverse(limits = rev(range(data_plot$depth))) +
   labs(x = "Time", y = "Depth (m)") +
   # facet_nested(trip + id ~ phase,
   facet_nested(id ~ phase,
-    scales = "free",
+    scales = "free_x",
     # independent = "x"
   ) +
   theme(
@@ -950,11 +1004,11 @@ arrival_dp <- data_plot %>%
     labels = c("-30h", "-24h", "-18h", "-12h", "-6h"),
     position = "top"
   ) +
-  scale_y_reverse() +
+  scale_y_reverse(limits = rev(range(data_plot$depth))) +
   labs(x = "Time", y = "Depth (m)") +
   # facet_nested(trip + id ~ phase,
   facet_nested(id ~ phase,
-    scales = "free",
+    scales = "free_x",
     # independent = "x"
   ) +
   theme(
@@ -1213,7 +1267,7 @@ label_x <- ggplot(data.frame(l = "Time (hours)", x = 1, y = 1)) +
 ::: callout-important
 ### Note
 
--   *n* = 403, because we removed individuals without location data (`filter(!is.na(Lat))`)
+-   *n* = 401, because we removed individuals without location data (`filter(!is.na(Lat))`)
 :::
 
 ```{r}
@@ -1939,7 +1993,7 @@ predator_map +
 ### Notes
 
 -   ?
--   *n* = 401, because we removed individuals without location data and those that do not have any benthic dives (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`) =\> it means that two individuals did not have any dives classified as benthic dives... (id = `2016014` and id = `2018002`)
+-   *n* = 401, because we removed individuals without location data and those that do not have any benthic dives (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`) 
 :::
 
 ## Figure 4
@@ -2292,14 +2346,14 @@ grid::grid.draw(grid::textGrob(ylab, x = 0.07, y = 0.55, rot = 90))
 ### Notes
 
 -   TODO: change the color code to match the color we attributed to benthic dives (greens?)
--   *n* = 403, because we removed individuals without location data (`filter(!is.na(Lat))`)
+-   *n* = 401, because we removed individuals without location data (`filter(!is.na(Lat))`)
 :::
 
 ## Figure 5
 
 ```{r}
 # the last plot
-prop_at_sea <- data_dive %>%
+prop_at_sea_dt <- data_dive %>%
   group_by(id) %>%
   # time difference between the first date and the others (telling R to take diff b/w first date and all other dates)
   mutate(nb_days_departure = trunc(as.numeric(difftime(
@@ -2335,8 +2389,11 @@ prop_at_sea <- data_dive %>%
     nb_benthic_class = sum(nb_daily_dives_type),
     nb_total_class = sum(nb_daily_dives),
     prop_class = nb_benthic_class / nb_total_class
-  ) %>%
-  # plot
+  )
+
+# plot
+prop_at_sea <- prop_at_sea_dt %>% 
+  # intiate plot
   ggplot(
     .,
     aes(x = day_class, y = prop_class)
@@ -2432,8 +2489,27 @@ prop_at_sea
 ### Notes
 
 -   ?
--   *n* = 422, because we removed individuals that do not have any benthic dives (*i.e.* we keep only those having benthic dives, `filter(DiveTypeName == "Benthic")`) =\> it means that two individuals did not have any dives classified as benthic dives... (id = `2016014` and id = `2018002`)
+-   *n* = 422
 :::
+
+```{r}
+# test to compare the proportion between arrival and departure
+broom::tidy(prop.test(x = c(prop_at_sea_dt %>% 
+                  filter(day_class == first(day_class)) %>% 
+                  pull(nb_benthic_class), 
+                prop_at_sea_dt %>% 
+                  filter(day_class == last(day_class)) %>% 
+                  pull(nb_benthic_class)), 
+          n = c(prop_at_sea_dt %>% 
+                  filter(day_class == first(day_class)) %>% 
+                  pull(nb_total_class), 
+                prop_at_sea_dt %>% 
+                  filter(day_class == last(day_class)) %>% 
+                  pull(nb_total_class))))
+```
+
+
+> Based on: [http://www.sthda.com/english/wiki/comparing-proportions-in-r](http://www.sthda.com/english/wiki/comparing-proportions-in-r)
 
 ## Supplementary
 
