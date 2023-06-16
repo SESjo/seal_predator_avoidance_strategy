@@ -665,9 +665,6 @@ table_1_b
 -   Table 2: Individual-level summary of dataset characteristics for Post Breeding and Post Molting foraging trips in northern elephant seals
 :::
 
-
-
-
 ```{r}
 # get the hours of departure and arrival
 hour_data <- data_dive %>%
@@ -711,9 +708,7 @@ watson.wheeler.test(
 )
 ```
 
-
-> More here: [https://stats.stackexchange.com/questions/265865/comparisons-of-circular-means](https://stats.stackexchange.com/questions/265865/comparisons-of-circular-means)
-
+> More here: <https://stats.stackexchange.com/questions/265865/comparisons-of-circular-means>
 
 ## Figure 1
 
@@ -1429,7 +1424,7 @@ data.frame(
   )
 ```
 
-> Good ressource to interpret Rayleigh test: [https://stats.stackexchange.com/questions/433396/interpretation-of-rayleigh-test-results](https://stats.stackexchange.com/questions/433396/interpretation-of-rayleigh-test-results)
+> Good ressource to interpret Rayleigh test: <https://stats.stackexchange.com/questions/433396/interpretation-of-rayleigh-test-results>
 
 ## Figure 3
 
@@ -1993,7 +1988,7 @@ predator_map +
 ### Notes
 
 -   ?
--   *n* = 401, because we removed individuals without location data and those that do not have any benthic dives (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`) 
+-   *n* = 401, because we removed individuals without location data and those that do not have any benthic dives (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`)
 :::
 
 ## Figure 4
@@ -2494,13 +2489,12 @@ prop_at_sea
 
 Test to compare if the proportion of benthic dives at arrival is higher than the one at departure:
 
-* $ H_{0}: p_{departure} \ge p_{arrival} $
-* $ H_{1}: p_{departure} \lt p_{arrival} $
-
+-   $H_{0}: p_{departure} \ge p_{arrival}$
+-   $H_{1}: p_{departure} \lt p_{arrival}$
 
 ```{r}
 # test to compare the proportion between arrival and departure
-prop.test(x = c(prop_at_sea_dt %>% 
+z_test <- prop.test(x = c(prop_at_sea_dt %>% 
                   filter(day_class == first(day_class)) %>% 
                   pull(nb_benthic_class), 
                 prop_at_sea_dt %>% 
@@ -2513,11 +2507,19 @@ prop.test(x = c(prop_at_sea_dt %>%
                   filter(day_class == last(day_class)) %>% 
                   pull(nb_total_class)),
           alternative = "less")
+z_test
 ```
 
-> $$ H_{0} is rejected, so we can say that the porportion of benthic dives at arrival is significantly superior than departure!
+```{r}
+# extract the z statistic
+sqrt(z_test$statistic)
+```
 
-> Based on: [http://www.sthda.com/english/wiki/comparing-proportions-in-r](http://www.sthda.com/english/wiki/comparing-proportions-in-r)
+> $H_{0}$ is rejected, so we can say that the porportion of benthic dives at arrival is significantly superior than departure!
+
+> Based on: <http://www.sthda.com/english/wiki/comparing-proportions-in-r>
+
+> and <https://bookdown.org/danieljcarter/r4steph/z-test-for-proportions.html>
 
 ## Supplementary
 
