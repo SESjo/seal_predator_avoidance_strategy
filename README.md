@@ -10,6 +10,10 @@ Just go to:
 * https://sesjo.github.io/seal_predator_avoidance_strategy/benthic_investigation.html.
 * https://sesjo.github.io/seal_predator_avoidance_strategy/benthic_day_night_investigation.html.
 
+> **Note**
+> 
+> The previous version of the figures is available [here](https://sesjo.github.io/seal_predator_avoidance_strategy/figures_old.html)
+
 ## Roadmap
 
 * Compute circular stats and add it to Figure 1
