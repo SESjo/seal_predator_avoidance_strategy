@@ -84,6 +84,28 @@ library(lubridate)
 
 # Setting up custom function
 
+## `matlab_to_posix`
+
+```{r}
+# function to convert matlab date into R posix
+matlab_to_posix <- function(x, timez = "UTC") {
+  days <- x - 719529 # 719529 = days from 1-1-0000 to 1-1-1970
+  secs <- days * 86400 # 86400 seconds in a day
+  return(as.POSIXct(
+    strftime(
+      as.POSIXct(secs,
+        origin = "1970-1-1",
+        tz = "UTC"
+      ),
+      format = "%Y-%m-%d %H:%M:%S",
+      tz = "UTC",
+      usetz = FALSE
+    ),
+    tz = timez
+  ))
+}
+```
+
 ## `windrose`
 
 ```{r}
@@ -225,64 +247,109 @@ windrose <-
   }
 ```
 
-## `matlab_to_posix`
-
-```{r}
-# function to convert matlab date into R posix
-matlab_to_posix <- function(x, timez = "UTC") {
-  days <- x - 719529 # 719529 = days from 1-1-0000 to 1-1-1970
-  secs <- days * 86400 # 86400 seconds in a day
-
-  return(as.POSIXct(
-    strftime(
-      as.POSIXct(secs,
-        origin = "1970-1-1",
-        tz = "UTC"
-      ),
-      format = "%Y-%m-%d %H:%M:%S",
-      tz = "UTC",
-      usetz = FALSE
-    ),
-    tz = timez
-  ))
-}
-```
-
 # Import data
 
 Let's load `data_dive`, *i.e.* the output of `data_wrangling.qmd`, and filter only on animals leaving from Ano Nuevo.
 
 ```{r}
 # import the data
+# data_dive <- readRDS("../export/data_dive_rev_3_inter.rds")
 data_dive <- readRDS("../export/data_dive.rds")
 
 # filter on seals departing from ANNU
 data_dive <- data_dive %>%
-  filter(DepartureLocation == "ANNU")
+  filter(DepartLoc == "ANNU")
 
-# remove id == `2016014` and id = `2018002` (no benthic dives)
-data_dive <- data_dive %>% 
-  filter(!id %in% c("2016014", "2018002"))
+# remove id == `2015006` (no benthic dives)
+data_dive <- data_dive %>%
+  filter(!id %in% c("2015006"))
 ```
 
 ```{r}
-# change few things
-data_dive <- data_dive %>% 
-  mutate(
-    # change divetype
-    DiveType = data.table::fifelse(DiveType == 3 &
-                                     (abs(bathy) - Maxdepth) > 100, 0, DiveType),
-    DiveTypeName = data.table::fifelse(
-      DiveTypeName == "Benthic" &
-        (abs(bathy) - Maxdepth) > 100,
-      "Transit",
-      DiveTypeName
-    ))
+# get predator distribution *.kmz (extraction using google earth)
+# for calculation
+Shark_area_coord <- read_sf("../export/shark.kmz") %>%
+  smooth(., method = "ksmooth", smoothness = 0.5) %>% 
+  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  dplyr::select(lon = X, lat = Y)
+Orca_area_coord <- read_sf("../export/orca.kmz") %>%
+  smooth(., method = "ksmooth", smoothness = 0.5) %>%
+  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  dplyr::select(lon = X, lat = Y)
 
-# add Post Molting vs Post Breeding trip
-data_dive <- data_dive %>% 
-  group_by(id) %>% 
-  mutate(trip = if_else(between(month(first(date)), 1,3), "Post Breeding", "Post Molting")) 
+# for plots
+Overlap_area_coord_to_display <- st_intersection(
+  read_sf("../export/shark.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5),
+  read_sf("../export/orca.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5)
+) %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  dplyr::select(lon = X, lat = Y)
+Shark_area_coord_to_display <- st_difference(
+  read_sf("../export/shark.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5),
+  read_sf("../export/orca.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5)
+) %>%
+  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  dplyr::select(lon = X, lat = Y)
+Orca_area_coord_to_display <- st_difference(
+  read_sf("../export/orca.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5),
+  read_sf("../export/shark.kmz") %>%
+    smooth(., method = "ksmooth", smoothness = 0.5)
+) %>%
+  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  dplyr::select(lon = X, lat = Y)
+```
+
+```{r}
+# # change few things
+# data_dive <- data_dive %>% 
+#   mutate(
+#     # change divetype
+#     DiveType = if_else(DiveType == 3 & 
+#                          !is.na(Lat) &
+#                          (abs(bathy) - Maxdepth) > 100, 0, DiveType),
+#     # create DiveTypeName
+#     DiveTypeName = case_when(
+#       DiveType == 0 ~ "Transit",
+#       DiveType == 1 ~ "Forage",
+#       DiveType == 2 ~ "Drift",
+#       DiveType == 3 ~ "Benthic"
+#     ),
+#     # add Post Molting vs Post Breeding trip
+#     trip = if_else(trip == "PB", "Post Breeding", "Post Molting"),
+#     # add date
+#     date = as.Date(DateTime),
+#     # add inside/outside each predators area
+#     shark_area = point.in.polygon(
+#       point.x = Lon,
+#       point.y = Lat,
+#       pol.x = Shark_area_coord$lon,
+#       pol.y = Shark_area_coord$lat
+#     ),
+#     orca_area = point.in.polygon(
+#       point.x = Lon,
+#       point.y = Lat,
+#       pol.x = Orca_area_coord$lon,
+#       pol.y = Orca_area_coord$lat
+#     ),
+#     overlap_area = as.numeric(if_else(shark_area == 1 &
+#                                         orca_area == 1, T, F)),
+#     total_area = as.numeric(if_else(shark_area == 0 &
+#                                      orca_area == 0, F, T))
+#   )
 ```
 
 # Data Visualisation
@@ -293,11 +360,20 @@ We need to define a custom function to calculate the summarize version of each c
 
 ```{r}
 compute_table_1_a <- function(x){
-  # if the sum of the column is below 100
-  if(sum(x)<100){
-    # it's definitely a proportion
-    # so we weighted average these
-    y = weighted.mean(x, c(1068746,2207361))
+  # if the sum of the column is below 0.1
+    if(sum(x)<(0.1*2)){
+    # it's the proportion of dives that are benthic
+    # so we weighted average these by taking into account all dives
+    y = weighted.mean(x, c(data_dive %>% filter(trip == "Post Breeding") %>% nrow(),
+                           data_dive %>% filter(trip == "Post Molting") %>% nrow()))
+    y = paste0(round(y*100,1),"%")
+    return(y)
+  # otherwise if below 1
+  } else if(sum(x)<(1*2)){
+    # it's the proportion of benthic dives within predator areas
+    # so we weighted average these by taking into account only dives with location data
+    y = weighted.mean(x, c(data_dive %>% filter(trip == "Post Breeding" & !is.na(Lat)) %>% nrow(),
+                           data_dive %>% filter(trip == "Post Molting" & !is.na(Lat)) %>% nrow()))
     y = paste0(round(y*100,1),"%")
     return(y)
   # otherwise we just sum the column
@@ -309,25 +385,6 @@ compute_table_1_a <- function(x){
 ```
 
 ```{r}
-# shark and orca area = NA if no location data
-data_dive <-
-  data_dive %>%
-  mutate(
-    shark_area = if_else(is.na(Lat), NA, shark_area),
-    orca_area = if_else(is.na(Lat), NA, orca_area)
-  ) %>%
-  # add year of deployment
-  group_by(id) %>%
-  mutate(
-    year = first(format(date, format = "%Y")),
-    shark_and_orca = if_else(is.na(Lat),
-                             NA,
-                             if_else(shark_area + orca_area == 2, 1, 0)),
-    shark_or_orca = if_else(is.na(Lat),
-                            NA,
-                            if_else(shark_area + orca_area >= 1, 1, 0))
-  )
-
 # build table
 table_1_a <- data_dive %>%
   group_by(trip, id) %>%
@@ -455,14 +512,27 @@ compute_table_1_b <- function(x) {
     if (sum(x) < 100) {
       # it is time
       # so we "circular" weighted average them
-      y = psych::circadian.mean(c(rep(x[1], 237),
-                                  rep(x[2], 187)),
+      y = psych::circadian.mean(c(rep(x[1], data_dive %>% 
+                                        filter(trip == "Post Breeding" & !is.na(Lat)) %>% 
+                                        pull(id) %>% 
+                                        n_distinct()),
+                                  rep(x[2], data_dive %>% 
+                                        filter(trip == "Post Molting" & !is.na(Lat)) %>% 
+                                        pull(id) %>% 
+                                        n_distinct())),
                                 na.rm = T)
       y = round(y, 1)
     } else{
       # otherwise it is just number
       # so we "just" weighted average them
-      y = weighted.mean(x, c(237, 187))
+      y = weighted.mean(x, c(data_dive %>% 
+                                        filter(trip == "Post Breeding") %>% 
+                                        pull(id) %>% 
+                                        n_distinct(), 
+                             data_dive %>% 
+                                        filter(trip == "Post Molting") %>% 
+                                        pull(id) %>% 
+                                        n_distinct()))
       y = round(y, 1)
     }
   } else {
@@ -473,27 +543,14 @@ compute_table_1_b <- function(x) {
 ```
 
 ```{r}
-# shark and orca area = NA if no location data
-data_dive <- data_dive %>%
-  mutate(
-    shark_area = if_else(is.na(Lat), NA, shark_area),
-    orca_area = if_else(is.na(Lat), NA, orca_area)
-  ) %>%
-  # add year of deployment
-  group_by(id) %>%
-  mutate(
-    year = first(format(date, format = "%Y")),
-    shark_and_orca = if_else(is.na(Lat),
-                             NA,
-                             if_else(shark_area + orca_area == 2, 1, 0)),
-    shark_or_orca = if_else(is.na(Lat),
-                            NA,
-                            if_else(shark_area + orca_area >= 1, 1, 0))
-  )
-
 # build table
 table_1_b <- data_dive %>%
   group_by(trip, id) %>%
+   group_by(trip, id) %>%
+  # create a column to say when start and end each trip by id
+  mutate(is_arrival = if_else(DiveNumber == max(DiveNumber), T, F),
+         is_departure = if_else(DiveNumber == min(DiveNumber), T, F)) %>% 
+  # then summarise
   summarise(
     n_dives_ind_all = length(DiveNumber),
     n_dives_ind_w_loc = length(DiveNumber[!is.na(Lat)]),
@@ -525,12 +582,12 @@ table_1_b <- data_dive %>%
                                                 length(DiveNumber[DiveTypeName == "Benthic" &
                                                                     shark_or_orca == 1 &
                                                                     !is.na(Lat)])),
-    hour_day_departure = first(hour(date_tz) +
-                                 minute(date_tz) / 60 +
-                                 second(date_tz) / (60 * 60)),
-    hour_day_arrival = last(hour(date_tz) +
-                              minute(date_tz) / 60 +
-                              second(date_tz) / (60 * 60)),
+    hour_day_departure = hour(date_tz[is_departure == T]) +
+                                 minute(date_tz[is_departure == T]) / 60 +
+                                 second(date_tz[is_departure == T]) / (60 * 60),
+    hour_day_arrival = hour(date_tz[is_arrival == T]) +
+                              minute(date_tz[is_arrival == T]) / 60 +
+                              second(date_tz[is_arrival == T]) / (60 * 60),
     .groups = "drop"
   ) %>%
   group_by(trip) %>%
@@ -579,23 +636,6 @@ table_1_b <- data_dive %>%
       "hour_day_arrival_sd"
     )
   ) %>%
-  # tab_spanner(
-  #   label = "per individual",
-  #   columns = c(
-  #     "n_dives_mean",
-  #     "n_dives_plus_minus",
-  #     "n_dives_sd",
-  #     "n_benthic_dives_mean",
-  #     "n_benthic_dives_plus_minus",
-  #     "n_benthic_dives_sd",
-  #     "hour_day_departure_mean",
-  #     "hour_day_departure_plus_minus",
-  #     "hour_day_departure_sd",
-  #     "hour_day_arrival_mean",
-  #     "hour_day_arrival_plus_minus",
-  #     "hour_day_arrival_sd"
-  #   )
-  # )  %>%
   # rename columns
   cols_label(
     trip = "Trip",
@@ -669,13 +709,17 @@ table_1_b
 # get the hours of departure and arrival
 hour_data <- data_dive %>%
   group_by(trip, id) %>%
+  # create a column to say when start and end each trip by id
+  mutate(is_arrival = if_else(DiveNumber == max(DiveNumber), T, F),
+         is_departure = if_else(DiveNumber == min(DiveNumber), T, F)) %>% 
+  # test
   summarise(
-    hour_day_departure = first(hour(date_tz) +
-                                 minute(date_tz) / 60 +
-                                 second(date_tz) / (60 * 60)),
-    hour_day_arrival = last(hour(date_tz) +
-                              minute(date_tz) / 60 +
-                              second(date_tz) / (60 * 60)),
+    hour_day_departure = hour(date_tz[is_departure == T]) +
+                                 minute(date_tz[is_departure == T]) / 60 +
+                                 second(date_tz[is_departure == T]) / (60 * 60),
+    hour_day_arrival = hour(date_tz[is_arrival == T]) +
+                              minute(date_tz[is_arrival == T]) / 60 +
+                              second(date_tz[is_arrival == T]) / (60 * 60),
     .groups = "drop"
   ) %>% 
   filter(!is.na(hour_day_departure) & !is.na(hour_day_arrival))
@@ -718,19 +762,17 @@ Individual are not chosen completely randomly, we picked randomly individuals th
 #| eval: false
 # to choose an individual ~180 dives for 36 hours
 data_dive %>%
-    # rename date as datetime
-    mutate(datetime = date) %>%
     # then by individual
     group_by(id) %>%
     # calculate
     mutate( # the difference time with the first dive
         diff_start = abs(as.numeric(difftime(
-            first(datetime), datetime,
+            first(DateTime), DateTime,
             units = "days"
         ))),
         # the difference time with the last dive
         diff_end = abs(as.numeric(difftime(
-            last(datetime), datetime,
+            last(DateTime), DateTime,
             units = "days"
         )))
     ) %>%
@@ -772,8 +814,8 @@ nb_days <- 1.5
 data_plot <- tdr_data %>%
   # convert time into date, a Posix
   mutate(
-    datetime = matlab_to_posix(time),
-    date = as.Date(datetime)
+    DateTime = matlab_to_posix(time),
+    date = as.Date(DateTime)
   ) %>%
   # add beginning and end date of the trip
   merge(
@@ -781,15 +823,15 @@ data_plot <- tdr_data %>%
     data_dive %>%
       group_by(id, trip) %>%
       summarise(
-        date_low = min(date),
-        date_high = max(date),
+        date_low = min(DateTime),
+        date_high = max(DateTime),
         .groups = "drop"
       ),
     by = "id",
     all.x = TRUE
   ) %>%
   # identify what to keep
-  mutate(to_keep = if_else(between(datetime, date_low, date_high), T, F)) %>%
+  mutate(to_keep = if_else(between(DateTime, date_low, date_high), T, F)) %>%
   # keep only between the beginning and the end
   filter(to_keep) %>%
   # sort to make sure the difftime are being done correctly
@@ -798,10 +840,10 @@ data_plot <- tdr_data %>%
   merge(
     .,
     data_dive %>%
-      group_by(id, date = as.Date(date)) %>%
+      group_by(id, date) %>%
       summarise(
         lat = median(Lat, na.rm = T),
-        lon = median(Long, na.rm = T),
+        lon = median(Lon, na.rm = T),
         .groups = "drop"
       ),
     by = c("id", "date"),
@@ -812,12 +854,12 @@ data_plot <- tdr_data %>%
   # calculate
   mutate( # the difference time with the first dive
     diff_start = abs(as.numeric(difftime(
-      first(datetime), datetime,
+      first(DateTime), DateTime,
       units = "days"
     ))),
     # the difference time with the last dive
     diff_end = abs(as.numeric(difftime(
-      last(datetime), datetime,
+      last(DateTime), DateTime,
       units = "days"
     )))
   ) %>%
@@ -830,11 +872,10 @@ data_plot <- tdr_data %>%
 # add bathy
 setDT(data_plot)
 setDT(data_dive)
-data_dive[, datetime := date]
-setkeyv(data_plot, c("id", "datetime"))
-setkeyv(data_dive, c("id", "datetime"))
+setkeyv(data_plot, c("id", "DateTime"))
+setkeyv(data_dive, c("id", "DateTime"))
 data_plot <- copy(data_dive) %>%
-  .[, .(id, datetime, bathy, DiveTypeName)] %>%
+  .[, .(id, DateTime, bathy, DiveTypeName)] %>%
   .[data_plot, roll = T]
 
 # get sunrise sunset information
@@ -861,8 +902,8 @@ sun_data <-
     data_plot %>%
       group_by(id, phase, trip) %>%
       summarise(
-        date_low = min(datetime),
-        date_high = max(datetime),
+        date_low = min(DateTime),
+        date_high = max(DateTime),
         .groups = "drop"
       ),
     by = c("id", "phase"),
@@ -901,12 +942,12 @@ departure_dp <- data_plot %>%
   filter(phase == "Departure") %>%
   group_by(id, phase) %>%
   # make the date starts on 2000-01-01 00:00:00
-  mutate(datetime = datetime - (
-    first(datetime) - as.POSIXct("2000-01-01 00:00:00", tz = "UTC")
+  mutate(DateTime = DateTime - (
+    first(DateTime) - as.POSIXct("2000-01-01 00:00:00", tz = "UTC")
   )) %>%
   ungroup() %>%
   mutate(`Dive Type` = if_else(DiveTypeName == "Benthic", "Benthic", "Other")) %>%
-  ggplot(aes(x = datetime, y = depth, col = `Dive Type`, group = id)) +
+  ggplot(aes(x = DateTime, y = depth, col = `Dive Type`, group = id)) +
   scale_color_manual(values = c("Benthic" = "#008c49", "Other" = "grey10")) +
   geom_rect(
     data = sun_data %>%
@@ -920,7 +961,7 @@ departure_dp <- data_plot %>%
     alpha = 0.4,
     inherit.aes = FALSE
   ) +
-  # geom_path(aes(x = datetime, y = abs(bathy))) +
+  # geom_path(aes(x = DateTime, y = abs(bathy))) +
   geom_path() +
   scale_x_datetime(
     # date_breaks = "6 hours",
@@ -967,12 +1008,12 @@ arrival_dp <- data_plot %>%
   filter(phase == "Arrival") %>%
   group_by(id, phase) %>%
   # make the date starts on 2000-01-01 00:00:00
-  mutate(datetime = datetime - (
-    first(datetime) - as.POSIXct("2000-01-01 00:00:00", tz = "UTC")
+  mutate(DateTime = DateTime - (
+    first(DateTime) - as.POSIXct("2000-01-01 00:00:00", tz = "UTC")
   )) %>%
   ungroup() %>%
   mutate(`Dive Type` = if_else(DiveTypeName == "Benthic", "Benthic", "Other")) %>%
-  ggplot(aes(x = datetime, y = depth, col = `Dive Type`, group = id)) +
+  ggplot(aes(x = DateTime, y = depth, col = `Dive Type`, group = id)) +
   scale_color_manual(values = c("Benthic" = "#008c49", "Other" = "grey10")) +
   geom_rect(
     data = sun_data %>%
@@ -986,7 +1027,7 @@ arrival_dp <- data_plot %>%
     alpha = 0.4,
     inherit.aes = FALSE
   ) +
-  # geom_path(aes(x = datetime, y = abs(bathy))) +
+  # geom_path(aes(x = DateTime, y = abs(bathy))) +
   geom_path() +
   scale_x_datetime(
     # date_breaks = "6 hours",
@@ -1064,25 +1105,26 @@ Let's create a table specific for this figure that only contains for each indivi
 ```{r}
 # let's add a column with the local_time
 data_windrose <- data_dive %>%
-  # get rid of data without location information
-  filter(!is.na(Lat)) %>%
-  # then by individual
-  group_by(id) %>%
-  # keep only the first, last date, but also all benthic dives
-  filter(date == min(date) |
-           date == max(date)) %>% 
+  # first we need to identify the start and the end of each trip by id
+  group_by(id, trip) %>%
+  mutate(is_arrival = if_else(DiveNumber == max(DiveNumber), T, F),
+         is_departure = if_else(DiveNumber == min(DiveNumber), T, F)) %>% 
+  # keep only the data of the first, last dives
+  filter(is_arrival == T | is_departure == T) %>% 
   # ungroup 
   ungroup() %>% 
+  # then, since we're looking at local time, we keep data with location
+  filter(!is.na(Lat)) %>% 
   # change colnames to make getSunlightTimes works
   mutate(date = as.Date(date_tz),
          lat = Lat,
-         lon = Long) %>%
+         lon = Lon) %>%
   # calculate hour of sunset and hour of sunrise
   mutate(getSunlightTimes(
     data = .,
     keep = c("sunrise", "sunset"),
     tz = tz_lookup_coords(lat = Lat,
-                          lon = Long,
+                          lon = Lon,
                           method = "accurate")
   )) %>%
   # extract hours of sunset an sunrise
@@ -1104,27 +1146,24 @@ data_windrose <- data_dive %>%
 
 # for departure
 windrose_departure_pb <- data_windrose %>%
-  group_by(id) %>%
-  filter(date_tz == min(date_tz) & trip == "Post Breeding") %>%
+  filter(is_departure == T & trip == "Post Breeding") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
-  summarise(nb_ind_hour = n(), .groups = "drop") %>%
+  summarise(nb_ind_hour = n_distinct(id), .groups = "drop") %>%
   mutate(origin = "Departure") %>%
   windrose(., 
            grid = c(5, 10, 15), 
            facet_wrap = "origin",
            hour_sunrise = data_windrose %>%
-             group_by(id) %>% 
-             filter(date_tz == min(date_tz) &
+             filter(is_departure == T &
                       trip == "Post Breeding") %>% 
              pull(h_sunrise) %>% 
-             median(.), 
+             psych::circadian.mean(.), 
            hour_sunset = data_windrose %>%
-             group_by(id) %>% 
-             filter(date_tz == min(date_tz) &
+             filter(is_departure == T &
                       trip == "Post Breeding") %>% 
              pull(h_sunset) %>% 
-             median(.)) +
+             psych::circadian.mean(.)) +
   theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) +
@@ -1139,26 +1178,25 @@ windrose_departure_pb <- data_windrose %>%
   size = 2)
 
 windrose_departure_pm <- data_windrose %>%
-  group_by(id) %>%
-  filter(date_tz == min(date_tz) & trip == "Post Molting") %>%
+  filter(is_departure == T & trip == "Post Molting") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
-  summarise(nb_ind_hour = n(), .groups = "drop") %>%
+  summarise(nb_ind_hour = n_distinct(id), .groups = "drop") %>%
   mutate(origin = "Departure") %>%
   windrose(., 
            grid = c(5, 10, 15),
            hour_sunrise = data_windrose %>%
              group_by(id) %>% 
-             filter(date_tz == min(date_tz) &
+             filter(is_departure == T &
                       trip == "Post Molting") %>% 
              pull(h_sunrise) %>% 
-             median(.), 
+             psych::circadian.mean(.), 
            hour_sunset = data_windrose %>%
              group_by(id) %>% 
-             filter(date_tz == min(date_tz) &
+             filter(is_departure == T &
                       trip == "Post Molting") %>% 
              pull(h_sunset) %>% 
-             median(.)) +
+             psych::circadian.mean(.)) +
   theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) #+
@@ -1174,27 +1212,26 @@ windrose_departure_pm <- data_windrose %>%
 
 # for arrival
 windrose_arrival_pb <- data_windrose %>%
-  group_by(id) %>%
-  filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
+  filter(is_arrival == T & trip == "Post Breeding") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
-  summarise(nb_ind_hour = n(), .groups = "drop") %>%
+  summarise(nb_ind_hour = n_distinct(id), .groups = "drop") %>%
   mutate(origin = "Arrival") %>%
   windrose(., grid = c(5, 10, 15),
            legend_position = "top",
            facet_grid = T,
            hour_sunrise = data_windrose %>%
              group_by(id) %>% 
-             filter(date_tz == max(date_tz) &
+             filter(is_arrival == T &
                       trip == "Post Breeding") %>% 
              pull(h_sunrise) %>% 
-             median(.), 
+             psych::circadian.mean(.), 
            hour_sunset = data_windrose %>%
              group_by(id) %>% 
-             filter(date_tz == max(date_tz) &
+             filter(is_arrival == T &
                       trip == "Post Breeding") %>% 
              pull(h_sunset) %>% 
-             median(.)) +
+             psych::circadian.mean(.)) +
   theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) #+
@@ -1207,27 +1244,26 @@ windrose_arrival_pb <- data_windrose %>%
   # size = 2)
 
 windrose_arrival_pm <- data_windrose %>%
-  group_by(id) %>%
-  filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
+  filter(is_arrival == T & trip == "Post Molting") %>%
   mutate(time = as.numeric(format(date_tz, format = "%H"))) %>%
   group_by(time, trip) %>%
-  summarise(nb_ind_hour = n(), .groups = "drop") %>%
+  summarise(nb_ind_hour = n_distinct(id), .groups = "drop") %>%
   mutate(origin = "Arrival") %>%
   windrose(., grid = c(5, 10, 15),
            legend_position = "top",
            facet_wrap = "trip",
            hour_sunrise = data_windrose %>%
              group_by(id) %>% 
-             filter(date_tz == max(date_tz) &
+             filter(is_arrival == T &
                       trip == "Post Molting") %>% 
              pull(h_sunrise) %>% 
-             median(.), 
+             psych::circadian.mean(.), 
            hour_sunset = data_windrose %>%
              group_by(id) %>% 
-             filter(date_tz == max(date_tz) &
+             filter(is_arrival == T &
                       trip == "Post Molting") %>% 
              pull(h_sunset) %>% 
-             median(.)) +
+             psych::circadian.mean(.)) +
   theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank()) #+
@@ -1262,15 +1298,15 @@ label_x <- ggplot(data.frame(l = "Time (hours)", x = 1, y = 1)) +
 ::: callout-important
 ### Note
 
--   *n* = 401, because we removed individuals without location data (`filter(!is.na(Lat))`)
+-   *n* = 361, this is the number of individuals having location data (allowing to calculate the local time) for their first and/or their last dives
 :::
 
 ```{r}
 # departure PM
 pm_dep_mean = psych::circadian.mean(
   data_windrose %>%
-    group_by(id) %>%
-    filter(date_tz == min(date_tz) & trip == "Post Molting") %>%
+    filter(is_departure == T & 
+             trip == "Post Molting") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
@@ -1279,8 +1315,8 @@ pm_dep_mean = psych::circadian.mean(
 # departure PB
 pb_dep_mean = psych::circadian.mean(
   data_windrose %>%
-    group_by(id) %>%
-    filter(date_tz == min(date_tz) & trip == "Post Breeding") %>%
+    filter(is_departure == T & 
+             trip == "Post Breeding") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
@@ -1289,8 +1325,8 @@ pb_dep_mean = psych::circadian.mean(
 # arrival PM
 pm_arr_mean = psych::circadian.mean(
   data_windrose %>%
-    group_by(id) %>%
-    filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
+    filter(is_arrival == T
+           & trip == "Post Molting") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
@@ -1299,8 +1335,8 @@ pm_arr_mean = psych::circadian.mean(
 # arrival PB
 pb_arr_mean = psych::circadian.mean(
   data_windrose %>%
-    group_by(id) %>%
-    filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
+    filter(is_arrival == T
+           & trip == "Post Breeding") %>%
     mutate(time = hour(date_tz) +
              minute(date_tz) / 60 +
              second(date_tz) / (60 * 60)) %>% pull(time)
@@ -1322,8 +1358,8 @@ hour_time_2_radian <- function(x, high = 24, low = 0){
 # departure
 test_departure_pm = CircStats::r.test(
   data_windrose %>%
-      group_by(id) %>%
-      filter(date_tz == min(date_tz) & trip == "Post Molting") %>%
+      filter(is_departure == T
+             & trip == "Post Molting") %>%
       mutate(time = hour(date_tz) +
                minute(date_tz)/60 +
                second(date_tz)/(60*60)) %>%
@@ -1331,19 +1367,19 @@ test_departure_pm = CircStats::r.test(
     hour_time_2_radian(.))
 test_departure_pb = CircStats::r.test(
   data_windrose %>%
-      group_by(id) %>%
-      filter(date_tz == min(date_tz) & trip == "Post Breeding") %>%
-      mutate(time = hour(date_tz) +
-               minute(date_tz)/60 +
-               second(date_tz)/(60*60)) %>%
+      filter(is_departure == T
+             & trip == "Post Breeding") %>%
+    mutate(time = hour(date_tz) +
+             minute(date_tz) / 60 +
+             second(date_tz) / (60 * 60)) %>%
     pull(time) %>%
     hour_time_2_radian(.))
 
 # arrival
 test_arrival_pm = CircStats::r.test(
   data_windrose %>%
-      group_by(id) %>%
-      filter(date_tz == max(date_tz) & trip == "Post Molting") %>%
+      filter(is_arrival == T
+             & trip == "Post Molting") %>%
       mutate(time = hour(date_tz) +
                minute(date_tz)/60 +
                second(date_tz)/(60*60)) %>%
@@ -1351,8 +1387,8 @@ test_arrival_pm = CircStats::r.test(
     hour_time_2_radian(.))
 test_arrival_pb = CircStats::r.test(
     data_windrose %>%
-      group_by(id) %>%
-      filter(date_tz == max(date_tz) & trip == "Post Breeding") %>%
+      filter(is_arrival == T
+             & trip == "Post Breeding") %>%
       mutate(time = hour(date_tz) +
                minute(date_tz)/60 +
                second(date_tz)/(60*60)) %>%
@@ -1441,7 +1477,8 @@ if (with_bathy){
     # using ggOceanMaps
     trip_zoom_in <- basemap(
       # limits = c(170, -110, 30, 59),
-      limits = c(-155, -110, 30, 60),
+      # limits = c(-155, -110, 30, 60),
+      limits = c(-165, -110, 30, 65),
       bathymetry = TRUE,
       shapefiles = "Arctic",
       rotate = TRUE,
@@ -1471,7 +1508,8 @@ if (with_bathy){
    # using ggOceanMaps
     trip_zoom_in <- basemap(
       # limits = c(170, -110, 20, 59),
-      limits = c(-155, -110, 30, 60),
+      # limits = c(-155, -110, 30, 60),
+      limits = c(-165, -110, 30, 65),
       land.col = 'black',
       # land.col = '#cdaa6d',
       bathymetry = FALSE,
@@ -1500,76 +1538,6 @@ if (with_bathy){
 }
 ```
 
-```{r}
-# get predator distribution *.kmz (extraction using google earth)
-# for calculation
-Shark_area_coord <- read_sf("../export/shark.kmz") %>%
-  smooth(., method = "ksmooth", smoothness = 0.5) %>% 
-  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
-  st_coordinates() %>%
-  as_tibble() %>%
-  select(lon = X, lat = Y)
-Orca_area_coord <- read_sf("../export/orca.kmz") %>%
-  smooth(., method = "ksmooth", smoothness = 0.5) %>%
-  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
-  st_coordinates() %>%
-  as_tibble() %>%
-  select(lon = X, lat = Y)
-
-# for plots
-Overlap_area_coord_to_display <- st_intersection(
-  read_sf("../export/shark.kmz") %>%
-    smooth(., method = "ksmooth", smoothness = 0.5),
-  read_sf("../export/orca.kmz") %>%
-    smooth(., method = "ksmooth", smoothness = 0.5)
-) %>%
-  st_coordinates() %>%
-  as_tibble() %>%
-  select(lon = X, lat = Y)
-Shark_area_coord_to_display <- st_difference(
-  read_sf("../export/shark.kmz") %>%
-    smooth(., method = "ksmooth", smoothness = 0.5),
-  read_sf("../export/orca.kmz") %>%
-    smooth(., method = "ksmooth", smoothness = 0.5)
-) %>%
-  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
-  st_coordinates() %>%
-  as_tibble() %>%
-  select(lon = X, lat = Y)
-Orca_area_coord_to_display <- st_difference(
-  read_sf("../export/orca.kmz") %>%
-    smooth(., method = "ksmooth", smoothness = 0.5),
-  read_sf("../export/shark.kmz") %>%
-    smooth(., method = "ksmooth", smoothness = 0.5)
-) %>%
-  # st_crop(., xmin = 170, xmax = -110, ymin = 20, ymax = 59) %>%
-  st_coordinates() %>%
-  as_tibble() %>%
-  select(lon = X, lat = Y)
-```
-
-```{r}
-# add inside/outside each area
-data_dive <- data_dive %>%
-  mutate(
-    shark_area = point.in.polygon(
-      point.x = Long,
-      point.y = Lat,
-      pol.x = Shark_area_coord$lon,
-      pol.y = Shark_area_coord$lat
-    ),
-    orca_area = point.in.polygon(
-      point.x = Long,
-      point.y = Lat,
-      pol.x = Orca_area_coord$lon,
-      pol.y = Orca_area_coord$lat
-    ),
-    overlap_area = as.numeric(if_else(shark_area == 1 &
-                                        orca_area == 1, T, F)),
-    total_area = as.numeric(if_else(shark_area == 0 &
-                                     orca_area == 0, F, T))
-  )
-```
 
 ```{r}
 # data_dive_longer <- pivot_longer(
@@ -1773,7 +1741,7 @@ df_kernel_dens_benthic <- data_dive %>%
   # only with location data
   filter(!is.na(Lat) & DiveTypeName == "Benthic") %>%
   # select only the required columns
-  select(lat = Lat, long = Long, id, DiveTypeName) %>%
+  select(lat = Lat, long = Lon, id, DiveTypeName) %>%
   # create col to nicely display dive type
   mutate(origin = paste(DiveTypeName, "dives"))
 
@@ -1789,15 +1757,34 @@ df_kernel_dens_sf_benthic <- group_by(df_kernel_dens_sf_benthic, origin)
 
 # kernel density estimation
 df_kernel_dens_sf_kde_benthic <- st_kde(df_kernel_dens_sf_benthic,
-                                H = diag(c(
-                                  MASS::bandwidth.nrd(
-                                    sf::st_coordinates(df_kernel_dens_sf_benthic)[, 1]
-                                  ),
-                                  MASS::bandwidth.nrd(
-                                    sf::st_coordinates(df_kernel_dens_sf_benthic)[, 2]
-                                  )
-                                ) / 4)^2
+                                # H = diag(c(
+                                #   MASS::bandwidth.nrd(
+                                #     sf::st_coordinates(df_kernel_dens_sf_benthic)[, 1]
+                                #   ),
+                                #   MASS::bandwidth.nrd(
+                                #     sf::st_coordinates(df_kernel_dens_sf_benthic)[, 2]
+                                #   )
+                                # ) / 4)^2
 )
+
+# df_kernel_dens_sf_kde_benthic <- st_kde(df_kernel_dens_sf_benthic,
+#                                         H = ks::Hpi(sf::st_coordinates(df_kernel_dens_sf_benthic),
+#                                                          pilot = "dunconstr"))
+
+# df_kernel_dens_sf_kde_benthic <- st_kde(df_kernel_dens_sf_benthic,
+#                                         H = ks::Hlscv.diag(sf::st_coordinates(df_kernel_dens_sf_benthic)))
+
+# df_kernel_dens_sf_kde_benthic <- st_kde(df_kernel_dens_sf_benthic,
+#                                 H = diag(c(
+#                                   MASS::bandwidth.nrd(
+#                                     sf::st_coordinates(df_kernel_dens_sf_benthic)[, 1]
+#                                   ),
+#                                   MASS::bandwidth.nrd(
+#                                     sf::st_coordinates(df_kernel_dens_sf_benthic)[, 2]
+#                                   )
+#                                 ))
+# )
+
 
 # https://loading.io/color/feature/BuGn-9/
 cols <- c("99%" = "#ccece6", 
@@ -1937,9 +1924,9 @@ orca_img <- readPNG("../img/orca_custom.png", native = T)
 predator_map +
   inset_element(
     p = orca_img,
-    left = 0.15,
+    left = 0.2,
     bottom = 0.82,
-    right = 0.25,
+    right = 0.3,
     top = 0.92
   ) + 
   theme(rect = element_rect(fill="transparent"),
@@ -1947,48 +1934,50 @@ predator_map +
   inset_element(
     p = shark_img,
     left = 0.15,
-    bottom = 0.3,
+    bottom = 0.15,
     right = 0.25,
-    top = 0.4
+    top = 0.25
   ) + 
   theme(rect = element_rect(fill="transparent"),
         plot.background = element_rect(color=NA))
 ```
 
 ```{r fig-map-3-no-run}
-#| fig-cap: "Spatial overlap of benthic dives performed by northern elephant seals (n = 401), and the shark and orca distribution area. (A) displays orca (orange polygon) and shark (purple polygon) distribution area along the west coast (adapted from Jorgenson, et al. 2019) with a kernel density estimation representing the occurrence of all the benthic dives. (B) presents a bar plot quantifying the proportion of benthic dives occurring inside or outside of different habitat categories: Overlap (overlapping area of shark and orca habitats), Orca (only within orca habitat), Shark (only within shark habitat), and Total (combined area of shark and orca habitats)."
-#| fig-width: 7
-#| fig-asp: 1
-#| eval: false
+#| fig-cap: "Same as the previous one, but with the benthic dives (black dots). We can see that some benthic happen outside orca areas..."
+#| fig-width: 8
 
-# # layout
-# layout <- "
-# #AAAAAAAAAAAAAAAAAAAAAAA
-# #AAAAAAAAAAAAAAAAAAAAAAA
-# #AAAAAAAAAAAAAAAAAAAAAAA
-# #AAAAAAAAAAAAAAAAAAAAAAA
-# #AAAAAAAAAAAAAAAAAAAAAAA
-# BCCCCCCCCCCCCCCCCCCCCCCC
-# BDDDDDDDDDDDDDDDDDDDDDDD
-# "
-# 
-# # predator_map$layers[[length(predator_map$layers)]]$aes_params$fill_new_new = "white" #cdaa6d
-# # predator_map$layers[[length(predator_map$layers)]]$aes_params$colour = "black"
-# 
-# # display
-# (predator_map + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
-#   (label_x_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
-#   (inside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
-#   (outside_bar_plot + theme(plot.margin = unit(c(0, 0, 0, 0), "pt"))) +
-#   plot_layout(design = layout) #+
-#   #plot_annotation(tag_levels = list(c("A","","B","")))
+# draw the map
+predator_map +
+  ggspatial::geom_spatial_point(data = data_dive %>% 
+               filter(!is.na(Lat) &
+                        DiveTypeName == "Benthic"),
+             aes(x = Lon, y = Lat), alpha = 0.2, size = 1) +
+  guides(alpha = "none", size = "none") +
+  inset_element(
+    p = orca_img,
+    left = 0.2,
+    bottom = 0.82,
+    right = 0.3,
+    top = 0.92
+  ) + 
+  theme(rect = element_rect(fill="transparent"),
+        plot.background = element_rect(color=NA)) +
+  inset_element(
+    p = shark_img,
+    left = 0.15,
+    bottom = 0.15,
+    right = 0.25,
+    top = 0.25
+  ) + 
+  theme(rect = element_rect(fill="transparent"),
+        plot.background = element_rect(color=NA))
 ```
 
 ::: callout-important
 ### Notes
 
 -   ?
--   *n* = 401, because we removed individuals without location data and those that do not have any benthic dives (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`)
+-   *n* = 392, this is the number of individuals having at least one benthic with one location associated with (`filter(!is.na(Lat) & DiveTypeName == "Benthic")`)
 :::
 
 ## Figure 4
@@ -2253,7 +2242,7 @@ dist_dep_prop <- data_dive %>%
     }
   ) +
   labs(
-    x = "Distance from departure (km)",
+    x = "Distance from Año Nuevo (km)",
     y = "Dive type proportion"
   ) +
   # scale_fill_viridis(
@@ -2334,14 +2323,13 @@ bathy_prop$labels$y <- dist_coast_prop$labels$y <- dist_dep_prop$labels$y <-" "
   theme(plot.margin = unit(c(0,.02,-1,.05),units = "npc")) +
   plot_annotation(tag_levels = 'A') +
   plot_layout(nrow = 5, guides = "collect")
-grid::grid.draw(grid::textGrob(ylab, x = 0.07, y = 0.55, rot = 90))
+# grid::grid.draw(grid::textGrob(ylab, x = 0.07, y = 0.55, rot = 90))
 ```
 
 ::: callout-important
 ### Notes
 
--   TODO: change the color code to match the color we attributed to benthic dives (greens?)
--   *n* = 401, because we removed individuals without location data (`filter(!is.na(Lat))`)
+-   *n* = 406, because we removed individuals without location data (`filter(!is.na(Lat))`)
 :::
 
 ## Figure 5
@@ -2403,7 +2391,7 @@ prop_at_sea <- prop_at_sea_dt %>%
     }
   ) +
   annotate("text", x = 5.3, y = 0.4, label = "Departure") +
-  annotate("text", x = 15, y = 0.5, label = "Arrival") +
+  annotate("text", x = 15, y = 0.43, label = "Arrival") +
   # geom_curve(
   #   data =   tibble(
   #     x1 = c(4, 17),
@@ -2444,8 +2432,8 @@ prop_at_sea <- prop_at_sea_dt %>%
     data =   tibble(
       x1 = c(16),
       x2 = c(19.7),
-      y1 = c(0.5),
-      y2 = c(0.57)
+      y1 = c(0.43),
+      y2 = c(0.5)
     ),
     aes(
       x = x1,
@@ -2483,8 +2471,7 @@ prop_at_sea
 ::: callout-important
 ### Notes
 
--   ?
--   *n* = 422
+-   *n* = 477 all individuals (since they all have at leat one benthic dives)
 :::
 
 Test to compare if the proportion of benthic dives at arrival is higher than the one at departure:
@@ -2573,14 +2560,12 @@ data_dive %>%
                                                 length(DiveNumber[DiveTypeName == "Benthic" &
                                                             shark_or_orca == 1 &
                                                             !is.na(Lat)])),
-    hour_day_departure = ifelse(length(id[DiveTypeName == "Benthic"]) == 0,
-                                 NA_real_,
-                                 first(as.numeric(format(date_tz[DiveTypeName == "Benthic"],
-                                                 format = "%H")))),
-    hour_day_arrival = ifelse(length(id[DiveTypeName == "Benthic"]) == 0,
-                               NA_real_,
-                               last(as.numeric(format(date_tz[DiveTypeName == "Benthic"],
-                                              format = "%H")))),
+    hour_day_departure = hour(date_tz[DiveNumber == min(DiveNumber)]) +
+                                 minute(date_tz[DiveNumber == min(DiveNumber)]) / 60 +
+                                 second(date_tz[DiveNumber == min(DiveNumber)]) / (60 * 60),
+    hour_day_arrival = hour(date_tz[DiveNumber == max(DiveNumber)]) +
+                                 minute(date_tz[DiveNumber == max(DiveNumber)]) / 60 +
+                                 second(date_tz[DiveNumber == max(DiveNumber)]) / (60 * 60),
     .groups = "drop"
   ) %>%
   group_by(year) %>%
@@ -2831,7 +2816,7 @@ df_kernel_dens <- data_dive %>%
   # only with location data
   filter(!is.na(Lat)) %>%
   # select only the required columns
-  select(lat = Lat, long = Long, id, DiveTypeName) %>%
+  select(lat = Lat, long = Lon, id, DiveTypeName) %>%
   # create col to nicely display dive type
   mutate(origin = paste(DiveTypeName, "dives"))
 ```
@@ -2853,14 +2838,14 @@ df_kernel_dens_sf <- group_by(df_kernel_dens_sf, origin)
 
 # kernel density estimation
 df_kernel_dens_sf_kde <- st_kde(df_kernel_dens_sf,
-                                H = diag(c(
-                                  MASS::bandwidth.nrd(
-                                    sf::st_coordinates(df_kernel_dens_sf)[, 1]
-                                  ),
-                                  MASS::bandwidth.nrd(
-                                    sf::st_coordinates(df_kernel_dens_sf)[, 2]
-                                  )
-                                ) / 4)^2
+                                # H = diag(c(
+                                #   MASS::bandwidth.nrd(
+                                #     sf::st_coordinates(df_kernel_dens_sf)[, 1]
+                                #   ),
+                                #   MASS::bandwidth.nrd(
+                                #     sf::st_coordinates(df_kernel_dens_sf)[, 2]
+                                #   )
+                                # ) / 4)^2
 )
 
 # https://github.com/r-spatial/sf/issues/1762
@@ -3031,7 +3016,7 @@ prop_at_sea_trip
 ```{r}
 #| include: false
 #| eval: false
-fwrite(data_dive[,.(id, date_start = date, date_end = date + Dduration, lat = Lat, lon = Long, dive_number = DiveNumber, benthic_index = BenthicDiveIndex, corner_index = CornerIndex, dive_type_name = DiveTypeName, dive_type = DiveType)], "./export/dive_data.csv")
+fwrite(data_dive[,.(id, date_start = date, date_end = date + Dduration, lat = Lat, lon = Lon, dive_number = DiveNumber, benthic_index = BenthicDiveIndex, corner_index = CornerIndex, dive_type_name = DiveTypeName, dive_type = DiveType)], "./export/dive_data.csv")
 ```
 
 ```{sql}
