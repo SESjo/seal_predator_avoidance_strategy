@@ -171,7 +171,7 @@ windrose <-
     }
     
     # set up max value
-    maxvalue <- 20
+    maxvalue <- 15
     
     # initialise the plot
     plt.dirrose_2 <- ggplot()
@@ -213,6 +213,8 @@ windrose <-
       ) +
       scale_fill_manual(values = c("white", "darkgrey"), name = "Time of day") +
       labs(x = "Time (hours)", y = "Count", title = set_title) +
+      # somehow was needed
+      theme(panel.grid.major = element_blank()) +
       coord_polar(start = -(deg / 2) * (pi / 180))
     
     # if facet
@@ -1152,7 +1154,7 @@ windrose_departure_pb <- data_windrose %>%
   summarise(nb_ind_hour = n_distinct(id), .groups = "drop") %>%
   mutate(origin = "Departure") %>%
   windrose(., 
-           grid = c(5, 10, 15), 
+           grid = c(5, 10), 
            facet_wrap = "origin",
            hour_sunrise = data_windrose %>%
              filter(is_departure == T &
@@ -1170,9 +1172,9 @@ windrose_departure_pb <- data_windrose %>%
   # geom_vline(xintercept = 6,
   #            linetype = "dashed") +
   geom_text(data = data.frame(
-    x = rep(8,3),
-    y = c(6, 11, 16),
-    text = c(5, 10, 15)
+    x = rep(8,2),
+    y = c(6, 11),
+    text = c(5, 10)
   ),
   aes(x = x, y = y, label = text),
   size = 2)
@@ -1184,7 +1186,7 @@ windrose_departure_pm <- data_windrose %>%
   summarise(nb_ind_hour = n_distinct(id), .groups = "drop") %>%
   mutate(origin = "Departure") %>%
   windrose(., 
-           grid = c(5, 10, 15),
+           grid = c(5, 10),
            hour_sunrise = data_windrose %>%
              group_by(id) %>% 
              filter(is_departure == T &
@@ -1217,7 +1219,7 @@ windrose_arrival_pb <- data_windrose %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n_distinct(id), .groups = "drop") %>%
   mutate(origin = "Arrival") %>%
-  windrose(., grid = c(5, 10, 15),
+  windrose(., grid = c(5, 10),
            legend_position = "top",
            facet_grid = T,
            hour_sunrise = data_windrose %>%
@@ -1249,7 +1251,7 @@ windrose_arrival_pm <- data_windrose %>%
   group_by(time, trip) %>%
   summarise(nb_ind_hour = n_distinct(id), .groups = "drop") %>%
   mutate(origin = "Arrival") %>%
-  windrose(., grid = c(5, 10, 15),
+  windrose(., grid = c(5, 10),
            legend_position = "top",
            facet_wrap = "trip",
            hour_sunrise = data_windrose %>%
@@ -1814,7 +1816,7 @@ p1 <- trip_zoom_in +
   scale_fill_manual(values = cols) +
   # scale_fill_grey() +
   # legend
-  labs(fill = "Probs") +
+  labs(fill = "Probability contours") +
   # legend at the top
   theme(legend.position = "top") +
   # set limit from predator_map$layers[[1]]$data
@@ -2310,8 +2312,8 @@ dist_dep_prop <- data_dive %>%
 
 ```{r}
 # y axis label position
-ylab <- bathy_prop$labels$y
-bathy_prop$labels$y <- dist_coast_prop$labels$y <- dist_dep_prop$labels$y <-" "
+ylab <- dist_coast_prop$labels$y
+bathy_prop$labels$y <- dist_dep_prop$labels$y <-" "
 ```
 
 ```{r fig-area-plot-4}
@@ -2822,7 +2824,7 @@ df_kernel_dens <- data_dive %>%
 ```
 
 ```{r fig-map-1}
-#| fig-cap: "Map of kernel density estimation representing the spatial distribution of Benthic, Drift, Forage, and Transit dives performed by northern elephant seals throughout their trip to sea. Probs represents different levels of probability density."
+#| fig-cap: "Map of kernel density estimation representing the spatial distribution of Benthic, Drift, Forage, and Transit dives performed by northern elephant seals throughout their trip to sea. Probability contours represent different levels of probability density."
 #| fig-height: 5
 #| fig-asp: 0.6
 
@@ -2872,7 +2874,7 @@ to_plot <- trip_zoom_out +
   # same colour bar
   scale_fill_viridis_d(option = "plasma") +
   # legend
-  labs(fill = "Probs") +
+  labs(fill = "Probability contours") +
   # no display alpha
   guides(alpha = "none") +
   # facet by origin
